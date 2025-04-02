@@ -87,7 +87,21 @@ router.get(
 router.put(
   '/:id', 
   authMiddleware,
-  createTripValidation,
+  [
+    body('title')
+      .optional()
+      .notEmpty().withMessage('Le titre ne peut pas être vide')
+      .isLength({ max: 100 }).withMessage('Le titre ne peut pas dépasser 100 caractères'),
+    body('description')
+      .optional()
+      .isLength({ max: 1000 }).withMessage('La description ne peut pas dépasser 1000 caractères'),
+    body('season')
+      .optional()
+      .isIn(['printemps', 'été', 'automne', 'hiver']).withMessage('Saison invalide'),
+    body('difficulty')
+      .optional()
+      .isIn(['facile', 'moyen', 'difficile', 'expert']).withMessage('Difficulté invalide')
+  ],
   validateRequest,
   TripController.updateTrip
 );
@@ -95,10 +109,6 @@ router.put(
 router.delete(
   '/:id', 
   authMiddleware,
-  [
-    param('id').isMongoId().withMessage('ID de trip invalide')
-  ],
-  validateRequest,
   TripController.deleteTrip
 );
 

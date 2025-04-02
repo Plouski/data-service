@@ -24,8 +24,8 @@ class TripController {
         steps: req.body.steps ? req.body.steps.map(step => ({
           location: {
             type: 'Point',
-            coordinates: step.coordinates,
-            address: sanitizeHtml(step.address)
+            coordinates: step.location.coordinates,
+            address: sanitizeHtml(step.location.address || '').trim()
           },
           description: sanitizeHtml(step.description || ''),
           expectedDuration: step.expectedDuration,
@@ -116,8 +116,8 @@ class TripController {
         steps: req.body.steps ? req.body.steps.map(step => ({
           location: {
             type: 'Point',
-            coordinates: step.coordinates,
-            address: sanitizeHtml(step.address)
+            coordinates: step.location.coordinates,
+            address: sanitizeHtml(step.location.address || 'Adresse non spécifiée').trim()
           },
           description: sanitizeHtml(step.description || ''),
           expectedDuration: step.expectedDuration,

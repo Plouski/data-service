@@ -28,35 +28,6 @@ const logger = require('./utils/logger');
 const app = express();
 const PORT = process.env.PORT || 5002;
 
-// Middleware personnalisé de sanitization
-const sanitizeInput = (req, res, next) => {
-  const sanitize = (input) => {
-    if (typeof input === 'string') {
-      // Échapper les caractères spéciaux et supprimer les opérateurs MongoDB
-      return input
-        .replace(/[\$\.\*]/g, '') // Supprimer les caractères spéciaux de MongoDB
-        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ''); // Supprimer les scripts
-    }
-    return input;
-  };
-
-  // Nettoyer req.body
-  if (req.body) {
-    Object.keys(req.body).forEach(key => {
-      req.body[key] = sanitize(req.body[key]);
-    });
-  }
-
-  // Nettoyer req.query
-  if (req.query) {
-    Object.keys(req.query).forEach(key => {
-      req.query[key] = sanitize(req.query[key]);
-    });
-  }
-
-  next();
-};
-
 // Middlewares de sécurité et de configuration
 app.use(helmet());
 
@@ -83,7 +54,7 @@ app.use(express.urlencoded({
 }));
 
 // Ajouter le middleware de sanitization
-app.use(sanitizeInput);
+// app.use(sanitizeInput);
 
 // Rate limiting pour prévenir les attaques par force brute
 const limiter = rateLimit({

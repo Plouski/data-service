@@ -35,7 +35,14 @@ const TripSchema = new mongoose.Schema({
       },
       address: {
         type: String,
-        required: [true, 'Une adresse est requise']
+        required: [true, 'Une adresse est requise'],
+        trim: true,
+        validate: {
+          validator: function(v) {
+            return v.trim().length > 0;
+          },
+          message: 'L\'adresse ne peut pas être vide'
+        }
       }
     },
     description: {
@@ -43,7 +50,7 @@ const TripSchema = new mongoose.Schema({
       trim: true
     },
     expectedDuration: {
-      type: Number, // en heures
+      type: Number,
       min: [0, 'La durée ne peut pas être négative']
     },
     order: {
@@ -129,6 +136,11 @@ TripSchema.statics.searchTrips = function(query) {
 
 // Méthode virtuelle pour calculer la durée totale
 TripSchema.virtual('totalDuration').get(function() {
+  // Vérifier si steps existe et est un tableau
+  if (!this.steps || !Array.isArray(this.steps)) {
+    return 0;
+  }
+  
   return this.steps.reduce((total, step) => 
     total + (step.expectedDuration || 0), 0
   );
@@ -139,6 +151,10 @@ TripSchema.set('toJSON', {
   virtuals: true,
   transform: (doc, ret) => {
     delete ret.__v;
+    // Ajouter une vérification supplémentaire
+    if (!ret.steps) {
+      ret.steps = [];
+    }
     return ret;
   }
 });

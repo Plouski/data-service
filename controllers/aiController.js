@@ -1,4 +1,5 @@
 const AiService = require('../services/aiService');
+const mongoose = require('mongoose');
 const { validationResult } = require('express-validator');
 const logger = require('../utils/logger');
 const sanitizeHtml = require('sanitize-html');
@@ -111,7 +112,6 @@ class AiController {
         })
       };
 
-      // Ajouter le feedback
       const updatedInteraction = await AiService.addAiFeedback(
         req.user.id, 
         interactionId, 
@@ -124,29 +124,6 @@ class AiController {
       logger.error('Erreur lors de l\'ajout du feedback IA', error);
       res.status(500).json({ 
         message: 'Erreur lors de l\'ajout du feedback',
-        error: error.message 
-      });
-    }
-  }
-
-  // Récupérer les statistiques d'utilisation de l'IA
-  static async getAiUsageStats(req, res) {
-    try {
-      const { 
-        startDate, 
-        endDate 
-      } = req.query;
-
-      const stats = await AiService.getAiUsageStats(req.user.id, {
-        startDate: startDate ? new Date(startDate) : null,
-        endDate: endDate ? new Date(endDate) : null
-      });
-
-      res.json(stats);
-    } catch (error) {
-      logger.error('Erreur lors de la récupération des statistiques IA', error);
-      res.status(500).json({ 
-        message: 'Erreur lors de la récupération des statistiques IA',
         error: error.message 
       });
     }

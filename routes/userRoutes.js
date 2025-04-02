@@ -9,27 +9,25 @@ const router = express.Router();
 // Validation pour l'inscription
 const registerValidation = [
   body('email')
-    .trim()
-    .notEmpty().withMessage('L\'email est requis')
-    .isEmail().withMessage('Format d\'email invalide')
-    .normalizeEmail({
-      gmail_remove_dots: false,
-      gmail_remove_subaddress: false,
-      gmail_convert_googlemaildot: false,
-      all_lowercase: true,
-      gmail_lowercase: true
-    })
-    .custom((value) => {
-      // Log pour vérifier l'email avant validation avec regex
-      console.log('Email avant regex personnalisé:', value);
-      
-      const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-      if (!emailRegex.test(value)) {
-        throw new Error('Adresse email invalide');
-      }
-      return true;
-    }),
-
+  .trim()
+  .notEmpty().withMessage('L\'email est requis')
+  .isEmail().withMessage('Format d\'email invalide')
+  .normalizeEmail({
+    gmail_remove_dots: false,
+    gmail_remove_subaddress: false,      
+    gmail_convert_googlemaildot: false,
+    all_lowercase: true,
+    gmail_lowercase: true
+  })
+  .custom((value) => {
+    console.log('Email après normalizeEmail:', value); // <-- Log ajouté ici
+    
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!emailRegex.test(value)) {
+      throw new Error('Adresse email invalide');
+    }
+    return true;
+  }),
   body('password')
     .isLength({ min: 8 }).withMessage('Le mot de passe doit contenir au moins 8 caractères')
     .matches(/\d/).withMessage('Le mot de passe doit contenir un chiffre')
@@ -49,14 +47,14 @@ const registerValidation = [
     .isLength({ max: 50 }).withMessage('Nom trop long')
 ];
 
-// // Validation pour la connexion
-// const loginValidation = [
-//   body('email')
-//     .isEmail().withMessage('Email invalide')
-//     .normalizeEmail(),
-//   body('password')
-//     .notEmpty().withMessage('Mot de passe requis')
-// ];
+// Validation pour la connexion
+const loginValidation = [
+  body('email')
+    .isEmail().withMessage('Email invalide')
+    .normalizeEmail(),
+  body('password')
+    .notEmpty().withMessage('Mot de passe requis')
+];
 
 // Routes publiques
 router.post(

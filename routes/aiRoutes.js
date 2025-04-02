@@ -79,17 +79,6 @@ router.post(
   AiController.addAiFeedback
 );
 
-router.get(
-  '/usage-stats', 
-  authMiddleware,
-  [
-    query('startDate').optional().isISO8601(),
-    query('endDate').optional().isISO8601()
-  ],
-  validateRequest,
-  AiController.getAiUsageStats
-);
-
 router.delete(
   '/:id', 
   authMiddleware,
