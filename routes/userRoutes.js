@@ -49,15 +49,6 @@ const registerValidation = [
     .isLength({ max: 50 }).withMessage('Nom trop long')
 ];
 
-// Validation pour la connexion
-const loginValidation = [
-  body('email')
-    .isEmail().withMessage('Email invalide')
-    .normalizeEmail(),
-  body('password')
-    .notEmpty().withMessage('Mot de passe requis')
-];
-
 // Routes publiques
 router.post(
   '/register', 
@@ -112,21 +103,10 @@ router.post('/forgot-password',
 );
 
 router.post('/oauth/google', UserController.handleGoogleOAuth);
-router.get('/oauth/google/callback',
-  passport.authenticate('google', { failureRedirect: '/login' }),
-  (err, req, res, next) => {
-    if (err) {
-      console.error('Erreur lors de l\'authentification Google:', err);
-      // Gérer l'erreur de manière appropriée (rediriger, afficher un message d'erreur, etc.)
-    } else {
-      // L'authentification a réussi, continuer avec la logique de votre application
-      OAuthController.oauthCallback(req, res, next);
-    }
-  }
-);
 router.post('/oauth/facebook', UserController.handleFacebookOAuth);
 router.post('/oauth/github', UserController.handleGithubOAuth);
-router.get('/users/:id', authMiddleware, UserController.getUserById);
+
+router.get('/:id', authMiddleware, UserController.getUserById);
 
 
 module.exports = router;
