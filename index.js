@@ -67,11 +67,11 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // Routes
-app.use('/api/users', userRoutes);
-app.use('/api/trips', tripRoutes);
-app.use('/api/subscriptions', subscriptionRoutes);
-app.use('/api/favorites', favoriteRoutes);
-app.use('/api/ai', aiRoutes);
+app.use('/users', userRoutes);
+app.use('/trips', tripRoutes);
+app.use('/subscriptions', subscriptionRoutes);
+app.use('/favorites', favoriteRoutes);
+app.use('/ai', aiRoutes);
 
 // Route de ping pour vérifier l'état du service
 app.get('/ping', (req, res) => {

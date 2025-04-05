@@ -3,7 +3,6 @@ const Subscription = require('../models/Subscription');
 const mongoose = require('mongoose'); // Ajout de cette ligne
 const { generateToken } = require('../middlewares/authMiddleware');
 const logger = require('../utils/logger');
-const JwtConfig = require('../config/jwtConfig');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 
