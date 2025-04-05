@@ -6,6 +6,7 @@ const UserSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Veuillez fournir une adresse email'],
     unique: true,
+    sparse: true,
     lowercase: true,
     trim: true,
     match: [/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, 'Adresse email invalide']
@@ -45,6 +46,31 @@ const UserSchema = new mongoose.Schema({
   lastLogin: {
     type: Date,
     default: null
+  },
+  resetPasswordToken: {
+    type: String,
+    default: null
+  },
+  resetPasswordExpires: {
+    type: Date,
+    default: null
+  },
+  oauth: {
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true
+    },
+    facebookId: {
+      type: String,
+      unique: true,
+      sparse: true
+    },
+    appleId: {
+      type: String,
+      unique: true,
+      sparse: true
+    }
   }
 }, {
   timestamps: true,
