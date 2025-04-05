@@ -1,6 +1,8 @@
 const express = require('express');
 const { body } = require('express-validator');
+const passport = require('passport');
 const UserController = require('../controllers/userController');
+const OAuthController = require('../controllers/userController');
 const { authMiddleware } = require('../middlewares/authMiddleware');
 const validateRequest = require('../middlewares/validateRequest');
 
@@ -99,5 +101,32 @@ router.delete(
   authMiddleware,
   UserController.deleteUserAccount
 );
+
+// In userRoutes.js of data-service
+router.post('/forgot-password', 
+  [
+    body('email').isEmail().withMessage('Email invalide'),
+    validateRequest
+  ],
+  UserController.forgotPassword
+);
+
+router.post('/oauth/google', UserController.handleGoogleOAuth);
+router.get('/oauth/google/callback',
+  passport.authenticate('google', { failureRedirect: '/login' }),
+  (err, req, res, next) => {
+    if (err) {
+      console.error('Erreur lors de l\'authentification Google:', err);
+      // Gérer l'erreur de manière appropriée (rediriger, afficher un message d'erreur, etc.)
+    } else {
+      // L'authentification a réussi, continuer avec la logique de votre application
+      OAuthController.oauthCallback(req, res, next);
+    }
+  }
+);
+router.post('/oauth/facebook', UserController.handleFacebookOAuth);
+router.post('/oauth/github', UserController.handleGithubOAuth);
+router.get('/users/:id', authMiddleware, UserController.getUserById);
+
 
 module.exports = router;
