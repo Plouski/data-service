@@ -107,6 +107,9 @@ router.post('/oauth/facebook', UserController.handleFacebookOAuth);
 router.post('/oauth/github', UserController.handleGithubOAuth);
 
 router.get('/:id', authMiddleware, UserController.getUserById);
+router.get('/email/:email', UserController.getUserByEmail);
+router.patch('/:userId/verification', UserController.updateVerificationStatus);
+router.post('/:userId/reset-password', UserController.createPasswordResetToken);
 
 
 module.exports = router;
