@@ -27,7 +27,8 @@ class UserController {
         email,
         password,
         firstName,
-        lastName
+        lastName,
+        isVerified: false
       });
 
       // Créer un abonnement gratuit par défaut
@@ -572,39 +573,45 @@ class UserController {
 
   static async getUserById(req, res) {
     try {
-      const user = await User.findById(req.params.id).select('-password'); // Masque le mot de passe
+      const { id } = req.params;
+      console.log(`Recherche de l'utilisateur avec l'ID: ${id}`);
+  
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({ message: 'ID utilisateur invalide' });
+      }
+  
+      const user = await User.findById(id).select('-password');
+      console.log('Utilisateur trouvé:', user);
+  
       if (!user) {
         return res.status(404).json({ message: 'Utilisateur non trouvé' });
       }
+  
       res.status(200).json(user);
     } catch (error) {
-      console.error('Erreur dans getUserById :', error);
+      console.error(error);
       res.status(500).json({ message: 'Erreur serveur' });
     }
-  };
+  }
 
   static async getUserByEmail(req, res) {
     try {
       const { email } = req.params;
-
-      // Recherche de l'utilisateur avec la méthode findOne
       const user = await User.findOne({ email: email.toLowerCase() });
 
       if (!user) {
         return res.status(404).json({ message: 'Utilisateur non trouvé' });
       }
 
-      // Retourner les informations de l'utilisateur (sans mot de passe)
-      const userResponse = {
+      // Retourner les informations publiques de l'utilisateur
+      res.json({
         _id: user._id,
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName
-      };
-
-      res.json(userResponse);
+      });
     } catch (error) {
-      logger.error('Erreur lors de la récupération de l\'utilisateur par email', error);
+      logger.error('Erreur lors de la récupération de l\'utilisateur', error);
       res.status(500).json({
         message: 'Erreur lors de la récupération de l\'utilisateur',
         error: error.message
@@ -641,13 +648,63 @@ class UserController {
   static async createPasswordResetToken(req, res) {
     try {
       const { userId } = req.params;
-      const { resetToken } = req.body;
+      const { resetToken, resetCode, expiresAt } = req.body;
+  
+      console.log('Création du token de réinitialisation :', {
+        userId,
+        resetCode,
+        expiresAt: new Date(expiresAt)
+      });
+  
+      const user = await User.findByIdAndUpdate(
+        userId, 
+        {
+          resetPasswordToken: resetToken,
+          resetPasswordCode: resetCode,
+          resetPasswordExpires: expiresAt
+        },
+        { 
+          new: true, 
+          runValidators: true,
+          context: 'query' // Important pour déclencher les validations
+        }
+      );
+  
+      if (!user) {
+        console.error(`Utilisateur non trouvé pour l'ID: ${userId}`);
+        return res.status(404).json({ message: 'Utilisateur non trouvé' });
+      }
+  
+      console.log('Utilisateur mis à jour :', {
+        _id: user._id,
+        email: user.email,
+        resetPasswordCode: user.resetPasswordCode,
+        resetPasswordExpires: user.resetPasswordExpires
+      });
+  
+      logger.info(`Token de réinitialisation créé pour l'utilisateur ${userId}`);
+      res.json({ message: 'Token de réinitialisation créé avec succès' });
+    } catch (error) {
+      console.error('Erreur détaillée :', error);
+      logger.error('Erreur lors de la création du token de réinitialisation', error);
+      res.status(500).json({ 
+        message: 'Erreur lors de la création du token',
+        error: error.message 
+      });
+    }
+  }
+
+  static async storeVerificationToken(req, res) {
+    try {
+      const { userId } = req.params;
+      const { token, code, expiresAt } = req.body;
 
       const user = await User.findByIdAndUpdate(
         userId,
         {
-          resetPasswordToken: resetToken,
-          resetPasswordExpires: Date.now() + 3600000 // 1 heure
+          verificationToken: token,
+          verificationCode: code,
+          verificationExpires: expiresAt
         },
         { new: true }
       );
@@ -656,13 +713,140 @@ class UserController {
         return res.status(404).json({ message: 'Utilisateur non trouvé' });
       }
 
-      logger.info(`Token de réinitialisation créé pour ${userId}`);
-      res.json(user);
+      logger.info(`Token de vérification stocké pour ${userId}`);
+      res.json({
+        success: true,
+        message: 'Token de vérification stocké avec succès'
+      });
     } catch (error) {
-      logger.error('Erreur lors de la création du token de réinitialisation', error);
+      logger.error('Erreur lors du stockage du token de vérification', error);
       res.status(500).json({
-        message: 'Erreur lors de la création du token',
+        message: 'Erreur lors du stockage du token',
         error: error.message
+      });
+    }
+  }
+
+  static async resetPassword(req, res) {
+    try {
+      const { email, resetCode, newPassword } = req.body;
+  
+      // Recherche de l'utilisateur avec email ET code
+      const user = await User.findOne({
+        email: email.toLowerCase(),
+        resetPasswordCode: resetCode
+      });
+  
+      // Si aucun utilisateur n'est trouvé, vérifier s'il existe des correspondances
+      if (!user) {
+        const matchingUsers = await User.find({
+          $or: [
+            { email: email.toLowerCase() },
+            { resetPasswordCode: resetCode }
+          ]
+        });
+  
+        return res.status(400).json({ 
+          message: 'Code de réinitialisation invalide ou ne correspond pas à cet email',
+          details: {
+            emailFound: matchingUsers.some(u => u.email === email.toLowerCase()),
+            codeFound: matchingUsers.some(u => u.resetPasswordCode === resetCode),
+            matchingEmails: matchingUsers.map(u => u.email)
+          }
+        });
+      }
+  
+      // Mettre à jour le mot de passe
+      user.password = newPassword;
+      user.resetPasswordCode = null;
+      user.resetPasswordToken = null;
+      user.resetPasswordExpires = null;
+  
+      await user.save();
+  
+      logger.info(`Mot de passe réinitialisé pour ${email}`);
+  
+      res.json({ message: 'Mot de passe réinitialisé avec succès' });
+    } catch (error) {
+      logger.error('Erreur lors de la réinitialisation du mot de passe', error);
+      res.status(500).json({ 
+        message: 'Erreur lors de la réinitialisation du mot de passe',
+        error: error.message 
+      });
+    }
+  }
+
+  static async verifyAccount(req, res) {
+    try {
+      const { email, verificationToken } = req.body;
+  
+      // Rechercher l'utilisateur avec le token de vérification
+      const user = await User.findOne({
+        email: email.toLowerCase(),
+        verificationToken: verificationToken
+      });
+  
+      if (!user) {
+        return res.status(400).json({ 
+          message: 'Token de vérification invalide ou expiré' 
+        });
+      }
+  
+      // Vérifier si le token est encore valide
+      if (user.verificationTokenExpires < new Date()) {
+        return res.status(400).json({ 
+          message: 'Token de vérification expiré' 
+        });
+      }
+  
+      // Mettre à jour le statut de vérification
+      user.isVerified = true;
+      user.verificationToken = null;
+      user.verificationTokenExpires = null;
+  
+      await user.save();
+  
+      logger.info(`Compte vérifié pour ${email}`);
+  
+      res.json({ 
+        message: 'Compte vérifié avec succès',
+        user: user.toPublicJSON()
+      });
+    } catch (error) {
+      logger.error('Erreur lors de la vérification du compte', error);
+      res.status(500).json({ 
+        message: 'Erreur lors de la vérification du compte',
+        error: error.message 
+      });
+    }
+  }
+
+  static async createVerificationToken(req, res) {
+    try {
+      const { userId } = req.params;
+      const { verificationToken, expiresAt } = req.body;
+  
+      const user = await User.findByIdAndUpdate(
+        userId, 
+        {
+          verificationToken,
+          verificationTokenExpires: expiresAt,
+          isVerified: false
+        },
+        { new: true, runValidators: true }
+      );
+  
+      if (!user) {
+        return res.status(404).json({ message: 'Utilisateur non trouvé' });
+      }
+  
+      logger.info(`Token de vérification créé pour l'utilisateur ${userId}`);
+      res.json({ message: 'Token de vérification créé avec succès' });
+    } catch (error) {
+      logger.error('Erreur lors de la création du token de vérification', error);
+      res.status(500).json({ 
+        message: 'Erreur lors de la création du token',
+        error: error.message 
       });
     }
   }

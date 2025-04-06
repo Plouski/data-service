@@ -1,8 +1,6 @@
 const express = require('express');
 const { body } = require('express-validator');
-const passport = require('passport');
 const UserController = require('../controllers/userController');
-const OAuthController = require('../controllers/userController');
 const { authMiddleware } = require('../middlewares/authMiddleware');
 const validateRequest = require('../middlewares/validateRequest');
 
@@ -50,29 +48,39 @@ const registerValidation = [
 ];
 
 // Routes publiques
-router.post(
-  '/register', 
-  registerValidation,
-  validateRequest,
-  UserController.createUser
-);
+//Inscription
+router.post('/register', registerValidation,validateRequest,UserController.createUser);
 
-router.post(
-  '/login', 
-  validateRequest,
-  UserController.loginUser
-);
+//Google
+router.post('/oauth/google', UserController.handleGoogleOAuth);
+
+//Facebook
+router.post('/oauth/facebook', UserController.handleFacebookOAuth);
+
+//Github
+router.post('/oauth/github', UserController.handleGithubOAuth);
+
+//Connexion avec email
+router.post('/login', validateRequest,UserController.loginUser);
+
+//Reinitialiser le mdp oublié avec le code donné par notification-service
+router.post('/:userId/reset-password', UserController.createPasswordResetToken);
+router.post('/reset-password', UserController.resetPassword);
+
+//Verifier le compte avec le token donné par notification-service
+router.get('/email/:email', UserController.getUserByEmail);
+router.post('/:userId/verify', UserController.createVerificationToken);
+router.post('/verify-account', UserController.verifyAccount);
 
 // Routes protégées
-router.get(
-  '/profile', 
-  authMiddleware,
-  UserController.getUserProfile
-);
+// Recuperer tous les infos d'un utilisateur par son id
+router.get('/:id', authMiddleware, UserController.getUserById);
 
-router.put(
-  '/profile', 
-  authMiddleware,
+// Recuperer le rofile
+router.get('/profile', authMiddleware,UserController.getUserProfile);
+
+// Modifier les infos du profile
+router.put('/profile', authMiddleware,
   [
     body('firstName')
       .optional()
@@ -87,29 +95,7 @@ router.put(
   UserController.updateUserProfile
 );
 
-router.delete(
-  '/account', 
-  authMiddleware,
-  UserController.deleteUserAccount
-);
-
-// In userRoutes.js of data-service
-router.post('/forgot-password', 
-  [
-    body('email').isEmail().withMessage('Email invalide'),
-    validateRequest
-  ],
-  UserController.forgotPassword
-);
-
-router.post('/oauth/google', UserController.handleGoogleOAuth);
-router.post('/oauth/facebook', UserController.handleFacebookOAuth);
-router.post('/oauth/github', UserController.handleGithubOAuth);
-
-router.get('/:id', authMiddleware, UserController.getUserById);
-router.get('/email/:email', UserController.getUserByEmail);
-router.patch('/:userId/verification', UserController.updateVerificationStatus);
-router.post('/:userId/reset-password', UserController.createPasswordResetToken);
-
+// Supprimer le compte
+router.delete('/account', authMiddleware,UserController.deleteUserAccount);
 
 module.exports = router;
