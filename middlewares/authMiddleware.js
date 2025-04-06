@@ -99,8 +99,22 @@ const generateToken = (user) => {
   );
 };
 
+const serviceAuthMiddleware = (req, res, next) => {
+  const apiKey = req.headers['x-api-key'];
+  
+  if (!apiKey || apiKey !== process.env.SERVICE_API_KEY) {
+    return res.status(401).json({ message: 'Authentification de service invalide' });
+  }
+  
+  // Ajouter un contexte de service à la requête
+  req.isServiceRequest = true;
+  
+  next();
+};
+
 module.exports = {
   authMiddleware,
   checkRole,
-  generateToken
+  generateToken,
+  serviceAuthMiddleware
 };

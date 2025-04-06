@@ -1,94 +1,106 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
-const UserSchema = new mongoose.Schema({
-  email: {
-    type: String,
-    required: [true, 'Veuillez fournir une adresse email'],
-    unique: true,
-    sparse: true,
-    lowercase: true,
-    trim: true,
-    match: [/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, 'Adresse email invalide']
-  },
-  password: {
-    type: String,
-    required: [true, 'Veuillez fournir un mot de passe'],
-    minlength: [8, 'Le mot de passe doit contenir au moins 8 caractères'],
-    select: false // Exclure le mot de passe des requêtes par défaut
-  },
-  role: {
-    type: String,
-    enum: ['user', 'premium', 'admin'],
-    default: 'user'
-  },
-  firstName: {
-    type: String,
-    trim: true
-  },
-  lastName: {
-    type: String,
-    trim: true
-  },
-  activeSubscription: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Subscription',
-    default: null
-  },
-  profilePicture: {
-    type: String,
-    default: null
-  },
-  isVerified: {
-    type: Boolean,
-    default: false
-  },
-  resetPasswordToken: {
-    type: String,
-    default: null
-  },
-  resetPasswordExpires: {
-    type: Date,
-    default: null
-  },
-  lastLogin: {
-    type: Date,
-    default: null
-  },
-  oauth: {
-    googleId: {
+const UserSchema = new mongoose.Schema(
+  {
+    // Informations personnelles
+    firstName: { type: String, trim: true },
+    lastName: { type: String, trim: true },
+    email: {
       type: String,
+      required: [true, 'Veuillez fournir une adresse email'],
       unique: true,
-      sparse: true
+      sparse: true,
+      lowercase: true,
+      trim: true,
+      match: [
+        /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/,
+        'Adresse email invalide'
+      ]
     },
-    facebookId: {
+    profilePicture: {
       type: String,
-      unique: true,
-      sparse: true
+      default: null
     },
-    appleId: {
+    role: {
       type: String,
-      unique: true,
-      sparse: true
+      enum: ['user', 'premium', 'admin'],
+      default: 'user'
+    },
+
+    // Authentification
+    password: {
+      type: String,
+      minlength: [8, 'Le mot de passe doit contenir au moins 8 caractères'],
+      select: false,
+      required: function () {
+        return !this.oauth?.googleId && !this.oauth?.facebookId && !this.oauth?.appleId && !this.oauth?.githubId;
+      }
+    },
+    lastLogin: {
+      type: Date,
+      default: null
+    },
+
+    // Gestion des abonnements
+    activeSubscription: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Subscription',
+      default: null
+    },
+
+    // Authentification externe (OAuth)
+    oauth: {
+      googleId: { type: String, unique: true, sparse: true },
+      facebookId: { type: String, unique: true, sparse: true },
+      appleId: { type: String, unique: true, sparse: true }
+    },
+
+    // Réinitialisation du mot de passe
+    resetPasswordCode: {
+      type: String,
+      default: null,
+      trim: true
+    },
+    resetPasswordToken: {
+      type: String,
+      default: null,
+      trim: true
+    },
+    resetPasswordExpires: {
+      type: Date,
+      default: null
+    },
+
+    // Vérification d’email
+    verificationToken: {
+      type: String,
+      default: null
+    },
+    verificationTokenExpires: {
+      type: Date,
+      default: null
+    },
+    isVerified: {
+      type: Boolean,
+      default: false
     }
+  },
+  {
+    timestamps: true
   }
-}, {
-  timestamps: true,
-  // Ajouter des indexes pour optimiser les performances
-  indexes: [
-    { email: 1 },
-    { role: 1 },
-    { createdAt: -1 }
-  ]
-});
+);
+
+// Indexes
+UserSchema.index({ email: 1 });
+UserSchema.index({ role: 1 });
+UserSchema.index({ createdAt: -1 });
 
 // Hook de pré-sauvegarde pour hasher le mot de passe
-UserSchema.pre('save', async function(next) {
-  // Hasher le mot de passe uniquement s'il a été modifié
+UserSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
 
   try {
-    // Génération du sel et hashage du mot de passe
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
     next();
@@ -97,22 +109,21 @@ UserSchema.pre('save', async function(next) {
   }
 });
 
-// Méthode pour comparer les mots de passe
-UserSchema.methods.comparePassword = async function(candidatePassword) {
+// Méthodes d'instance
+UserSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };
 
-// Méthode statique pour trouver un utilisateur par email
-UserSchema.statics.findByEmail = function(email) {
-  return this.findOne({ email: email.toLowerCase() });
-};
-
-// Méthode pour obtenir un profil public sécurisé
-UserSchema.methods.toPublicJSON = function() {
+UserSchema.methods.toPublicJSON = function () {
   const obj = this.toObject();
   delete obj.password;
   delete obj.__v;
   return obj;
+};
+
+// Méthodes statiques
+UserSchema.statics.findByEmail = function (email) {
+  return this.findOne({ email: email.toLowerCase() });
 };
 
 const User = mongoose.model('User', UserSchema);
