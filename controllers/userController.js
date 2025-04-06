@@ -81,9 +81,9 @@ class UserController {
       await session.abortTransaction();
 
       logger.error('Erreur lors de la création de l\'utilisateur', error);
-      res.status(500).json({ 
+      res.status(500).json({
         message: 'Erreur lors de la création de l\'utilisateur',
-        error: error.message 
+        error: error.message
       });
     } finally {
       // Terminer la session
@@ -204,39 +204,39 @@ class UserController {
   static async forgotPassword(req, res) {
     try {
       const { email } = req.body;
-  
+
       // Log the request
       console.log(`Forgot password request for email: ${email}`);
-  
+
       // Find the user by email
       const user = await User.findOne({ email });
       if (!user) {
         return res.status(404).json({ message: 'Utilisateur non trouvé' });
       }
-  
+
       // Generate reset token using crypto
       const resetToken = crypto.randomBytes(32).toString('hex');
       const resetTokenExpiry = Date.now() + 3600000; // 1 hour from now
-  
+
       // Update user with reset token
       user.resetPasswordToken = resetToken;
       user.resetPasswordExpires = new Date(resetTokenExpiry);
       await user.save();
-  
+
       logger.info(`Token de réinitialisation généré pour ${email}`);
-  
-      res.status(200).json({ 
+
+      res.status(200).json({
         message: 'Token de réinitialisation généré',
         resetToken  // Only for testing, remove in production
       });
-  
+
     } catch (error) {
       console.error('Forgot password error:', error);
-      
+
       logger.error('Erreur lors de la génération du token de réinitialisation', error);
-      res.status(500).json({ 
+      res.status(500).json({
         message: 'Erreur lors de la génération du token de réinitialisation',
-        error: error.message 
+        error: error.message
       });
     }
   }
@@ -249,7 +249,7 @@ class UserController {
       console.log('Requête OAuth Google reçue:', { email, firstName, lastName, googleId });
 
       // Vérifier si l'utilisateur existe déjà
-      let user = await User.findOne({ 
+      let user = await User.findOne({
         $or: [
           { email },
           { 'oauth.googleId': googleId }
@@ -301,10 +301,10 @@ class UserController {
 
       // Générer un token
       const token = jwt.sign(
-        { 
-          userId: user._id, 
+        {
+          userId: user._id,
           email: user.email,
-          role: user.role 
+          role: user.role
         },
         process.env.JWT_SECRET,
         { expiresIn: '24h' }
@@ -329,9 +329,9 @@ class UserController {
       console.error('Erreur lors de la gestion OAuth Google:', error);
       logger.error('Erreur OAuth Google', error);
 
-      res.status(500).json({ 
+      res.status(500).json({
         message: 'Erreur lors de la connexion OAuth',
-        error: error.message 
+        error: error.message
       });
     }
   }
@@ -339,23 +339,23 @@ class UserController {
   static async handleFacebookOAuth(req, res) {
     try {
       let { email, firstName, lastName, facebookId } = req.body;
-  
+
       // Log pour le débogage
       console.log('Requête OAuth Facebook reçue:', { email, firstName, lastName, facebookId });
-  
+
       // Vérifier si l'utilisateur existe déjà
-      let user = await User.findOne({ 
+      let user = await User.findOne({
         $or: [
           { email },
           { 'oauth.facebookId': facebookId }
         ]
       });
-  
+
       if (!user) {
         if (!email) {
           email = `${facebookId}@facebook-oauth.com`;
         }
-  
+
         // Créer un nouvel utilisateur
         user = new User({
           email,
@@ -366,13 +366,13 @@ class UserController {
           },
           isVerified: true  // Les utilisateurs OAuth sont généralement vérifiés
         });
-  
+
         // Générer un mot de passe temporaire
         const tempPassword = crypto.randomBytes(16).toString('hex');
         user.password = tempPassword;
-  
+
         await user.save();
-  
+
         // Créer un abonnement par défaut
         const defaultSubscription = new Subscription({
           userId: user._id,
@@ -390,28 +390,28 @@ class UserController {
             customization: false
           }
         });
-  
+
         await defaultSubscription.save();
-  
+
         // Mettre à jour l'utilisateur avec l'abonnement
         user.activeSubscription = defaultSubscription._id;
         await user.save();
       }
-  
+
       // Générer un token
       const token = jwt.sign(
-        { 
-          userId: user._id, 
+        {
+          userId: user._id,
           email: user.email,
-          role: user.role 
+          role: user.role
         },
         process.env.JWT_SECRET,
         { expiresIn: '24h' }
       );
-  
+
       // Log de succès
       logger.info(`Utilisateur OAuth Facebook connecté: ${email}`);
-  
+
       res.status(200).json({
         user: {
           _id: user._id,
@@ -422,15 +422,15 @@ class UserController {
         },
         token
       });
-  
+
     } catch (error) {
       // Log d'erreur détaillé
       console.error('Erreur lors de la gestion OAuth Facebook:', error);
       logger.error('Erreur OAuth Facebook', error);
-  
-      res.status(500).json({ 
+
+      res.status(500).json({
         message: 'Erreur lors de la connexion OAuth',
-        error: error.message 
+        error: error.message
       });
     }
   }
@@ -438,23 +438,23 @@ class UserController {
   static async handleGithubOAuth(req, res) {
     try {
       let { email, firstName, lastName, githubId } = req.body;
-  
+
       // Log pour le débogage
       console.log('Requête OAuth GitHub reçue:', { email, firstName, lastName, githubId });
-  
+
       // Vérifier si l'utilisateur existe déjà
-      let user = await User.findOne({ 
+      let user = await User.findOne({
         $or: [
           { email },
           { 'oauth.githubId': githubId }
         ]
       });
-  
+
       if (!user) {
         if (!email) {
           email = `${githubId}@github-oauth.com`;
         }
-  
+
         // Créer un nouvel utilisateur
         user = new User({
           email,
@@ -465,13 +465,13 @@ class UserController {
           },
           isVerified: true  // Les utilisateurs OAuth sont généralement vérifiés
         });
-  
+
         // Générer un mot de passe temporaire
         const tempPassword = crypto.randomBytes(16).toString('hex');
         user.password = tempPassword;
-  
+
         await user.save();
-  
+
         // Créer un abonnement par défaut
         const defaultSubscription = new Subscription({
           userId: user._id,
@@ -489,28 +489,28 @@ class UserController {
             customization: false
           }
         });
-  
+
         await defaultSubscription.save();
-  
+
         // Mettre à jour l'utilisateur avec l'abonnement
         user.activeSubscription = defaultSubscription._id;
         await user.save();
       }
-  
+
       // Générer un token
       const token = jwt.sign(
-        { 
-          userId: user._id, 
+        {
+          userId: user._id,
           email: user.email,
-          role: user.role 
+          role: user.role
         },
         process.env.JWT_SECRET,
         { expiresIn: '24h' }
       );
-  
+
       // Log de succès
       logger.info(`Utilisateur OAuth GitHub connecté: ${email}`);
-  
+
       res.status(200).json({
         user: {
           _id: user._id,
@@ -521,15 +521,15 @@ class UserController {
         },
         token
       });
-  
+
     } catch (error) {
       // Log d'erreur détaillé
       console.error('Erreur lors de la gestion OAuth GitHub:', error);
       logger.error('Erreur OAuth GitHub', error);
-  
-      res.status(500).json({ 
+
+      res.status(500).json({
         message: 'Erreur lors de la connexion OAuth',
-        error: error.message 
+        error: error.message
       });
     }
   }
@@ -537,21 +537,21 @@ class UserController {
   static async oauthCallback(req, res) {
     try {
       const user = req.user;
-  
+
       if (!user) {
         return res.status(401).json({ message: 'Utilisateur non authentifié' });
       }
-  
+
       // Génére le token JWT
       const token = jwt.sign(
         { userId: user._id },
         process.env.JWT_SECRET,
         { expiresIn: '1h' }
       );
-  
+
       // Option 1 : redirection avec token dans l'URL (à toi de le lire côté front)
       // res.redirect(`http://localhost:3000/oauth-success?token=${token}`);
-  
+
       // Option 2 : renvoyer le token en JSON (utile pour SPA ou mobile app)
       res.status(200).json({
         message: 'Authentification réussie',
@@ -563,7 +563,7 @@ class UserController {
           lastName: user.lastName
         }
       });
-  
+
     } catch (err) {
       console.error('Erreur callback OAuth :', err);
       res.status(500).json({ message: 'Erreur serveur' });
@@ -582,6 +582,90 @@ class UserController {
       res.status(500).json({ message: 'Erreur serveur' });
     }
   };
+
+  static async getUserByEmail(req, res) {
+    try {
+      const { email } = req.params;
+
+      // Recherche de l'utilisateur avec la méthode findOne
+      const user = await User.findOne({ email: email.toLowerCase() });
+
+      if (!user) {
+        return res.status(404).json({ message: 'Utilisateur non trouvé' });
+      }
+
+      // Retourner les informations de l'utilisateur (sans mot de passe)
+      const userResponse = {
+        _id: user._id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName
+      };
+
+      res.json(userResponse);
+    } catch (error) {
+      logger.error('Erreur lors de la récupération de l\'utilisateur par email', error);
+      res.status(500).json({
+        message: 'Erreur lors de la récupération de l\'utilisateur',
+        error: error.message
+      });
+    }
+  }
+
+  static async updateVerificationStatus(req, res) {
+    try {
+      const { userId } = req.params;
+      const { isVerified } = req.body;
+
+      const user = await User.findByIdAndUpdate(
+        userId,
+        { isVerified },
+        { new: true, runValidators: true }
+      );
+
+      if (!user) {
+        return res.status(404).json({ message: 'Utilisateur non trouvé' });
+      }
+
+      logger.info(`Statut de vérification mis à jour pour ${userId}`);
+      res.json(user);
+    } catch (error) {
+      logger.error('Erreur lors de la mise à jour du statut de vérification', error);
+      res.status(500).json({
+        message: 'Erreur lors de la mise à jour du statut',
+        error: error.message
+      });
+    }
+  }
+
+  static async createPasswordResetToken(req, res) {
+    try {
+      const { userId } = req.params;
+      const { resetToken } = req.body;
+
+      const user = await User.findByIdAndUpdate(
+        userId,
+        {
+          resetPasswordToken: resetToken,
+          resetPasswordExpires: Date.now() + 3600000 // 1 heure
+        },
+        { new: true }
+      );
+
+      if (!user) {
+        return res.status(404).json({ message: 'Utilisateur non trouvé' });
+      }
+
+      logger.info(`Token de réinitialisation créé pour ${userId}`);
+      res.json(user);
+    } catch (error) {
+      logger.error('Erreur lors de la création du token de réinitialisation', error);
+      res.status(500).json({
+        message: 'Erreur lors de la création du token',
+        error: error.message
+      });
+    }
+  }
 }
 
 module.exports = UserController;
