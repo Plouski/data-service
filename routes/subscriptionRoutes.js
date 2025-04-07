@@ -1,7 +1,7 @@
 const express = require('express');
 const { body, query, param } = require('express-validator');
 const SubscriptionController = require('../controllers/subscriptionController');
-const { authMiddleware } = require('../middlewares/authMiddleware');
+const { authMiddleware, checkRole } = require('../middlewares/authMiddleware');
 const validateRequest = require('../middlewares/validateRequest');
 
 const router = express.Router();
@@ -45,6 +45,12 @@ router.put(
   SubscriptionController.updateSubscription
 );
 
+router.put('/update-from-payment',
+  authMiddleware,
+  checkRole(['admin', 'service']), // Ajoutez 'service' ici
+  SubscriptionController.updateSubscription
+);
+
 router.delete(
   '/', 
   authMiddleware,
@@ -77,4 +83,23 @@ router.get(
   SubscriptionController.checkAvailableFeatures
 );
 
+router.post(
+  '/record-payment',
+  authMiddleware, // Middleware pour vérifier l'API key inter-services
+  [
+    body('userId').isString().notEmpty().withMessage('ID utilisateur requis'),
+    body('amount').isNumeric().withMessage('Montant requis'),
+    body('currency').optional().isString(),
+    body('transactionId').isString().notEmpty().withMessage('ID de transaction requis'),
+    body('invoiceId').optional().isString()
+  ],
+  validateRequest,
+  SubscriptionController.recordPayment
+);
+
+router.get(
+  '/status/:userId',
+  authMiddleware,
+  SubscriptionController.getSubscriptionStatus
+);
 module.exports = router;

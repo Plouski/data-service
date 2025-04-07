@@ -36,13 +36,39 @@ const SubscriptionSchema = new mongoose.Schema({
   paymentInfo: {
     transactionId: String,
     method: String,
-    lastFourDigits: String
+    lastFourDigits: String,
+    stripeCustomerId: String,
+    stripeSubscriptionId: String,
+    stripePriceId: String
+  },
+  paymentHistory: [{
+    date: {
+      type: Date,
+      default: Date.now
+    },
+    amount: Number,
+    currency: {
+      type: String,
+      default: 'EUR'
+    },
+    status: {
+      type: String,
+      enum: ['success', 'failed', 'refunded', 'pending'],
+      default: 'success'
+    },
+    transactionId: String,
+    invoiceId: String
+  }],
+  metadata: {
+    type: Map,
+    of: String,
+    default: {}
   },
   features: {
     maxTrips: {
       type: Number,
-      default: function() {
-        switch(this.plan) {
+      default: function () {
+        switch (this.plan) {
           case 'free': return 3;
           case 'standard': return 10;
           case 'premium': return 50;
@@ -53,8 +79,8 @@ const SubscriptionSchema = new mongoose.Schema({
     },
     aiConsultations: {
       type: Number,
-      default: function() {
-        switch(this.plan) {
+      default: function () {
+        switch (this.plan) {
           case 'free': return 1;
           case 'standard': return 5;
           case 'premium': return 20;
@@ -65,7 +91,7 @@ const SubscriptionSchema = new mongoose.Schema({
     },
     customization: {
       type: Boolean,
-      default: function() {
+      default: function () {
         return ['premium', 'enterprise'].includes(this.plan);
       }
     }
@@ -75,16 +101,19 @@ const SubscriptionSchema = new mongoose.Schema({
   indexes: [
     { userId: 1 },
     { plan: 1 },
-    { status: 1 }
+    { status: 1 },
+    { 'paymentInfo.transactionId': 1 },
+    { 'paymentInfo.stripeCustomerId': 1 },
+    { 'paymentInfo.stripeSubscriptionId': 1 }
   ]
 });
 
 // Hook avant la sauvegarde pour gérer les dates
-SubscriptionSchema.pre('save', function(next) {
+SubscriptionSchema.pre('save', function (next) {
   // Définir automatiquement la date de fin selon le plan
   if (!this.endDate) {
     const endDate = new Date();
-    switch(this.plan) {
+    switch (this.plan) {
       case 'free':
         endDate.setMonth(endDate.getMonth() + 1); // 1 mois gratuit
         break;
@@ -109,8 +138,22 @@ SubscriptionSchema.pre('save', function(next) {
   next();
 });
 
+// Méthode pour ajouter un paiement à l'historique
+SubscriptionSchema.methods.addPaymentToHistory = async function (paymentData) {
+  this.paymentHistory.push({
+    date: paymentData.date || new Date(),
+    amount: paymentData.amount,
+    currency: paymentData.currency || 'EUR',
+    status: paymentData.status || 'success',
+    transactionId: paymentData.transactionId,
+    invoiceId: paymentData.invoiceId
+  });
+
+  return this.save();
+};
+
 // Méthode statique pour trouver l'abonnement actif d'un utilisateur
-SubscriptionSchema.statics.findActiveSubscription = function(userId) {
+SubscriptionSchema.statics.findActiveSubscription = function (userId) {
   return this.findOne({
     userId: userId,
     status: 'active',
