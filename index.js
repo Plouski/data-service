@@ -53,9 +53,6 @@ app.use(express.urlencoded({
   limit: process.env.MAX_REQUEST_BODY_SIZE || '1mb'
 }));
 
-// Ajouter le middleware de sanitization
-// app.use(sanitizeInput);
-
 // Rate limiting pour prévenir les attaques par force brute
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -67,11 +64,11 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // Routes
-app.use('/users', userRoutes);
-app.use('/trips', tripRoutes);
-app.use('/subscriptions', subscriptionRoutes);
-app.use('/favorites', favoriteRoutes);
-app.use('/ai', aiRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/trips', tripRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/favorites', favoriteRoutes);
+app.use('/api/ai', aiRoutes);
 
 // Route de ping pour vérifier l'état du service
 app.get('/ping', (req, res) => {

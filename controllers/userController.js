@@ -1,6 +1,6 @@
 const User = require('../models/User');
 const Subscription = require('../models/Subscription');
-const mongoose = require('mongoose'); // Ajout de cette ligne
+const mongoose = require('mongoose');
 const { generateToken } = require('../middlewares/authMiddleware');
 const logger = require('../utils/logger');
 const jwt = require('jsonwebtoken');
@@ -576,6 +576,19 @@ class UserController {
       const { id } = req.params;
       console.log(`Recherche de l'utilisateur avec l'ID: ${id}`);
   
+      // Cas spécial pour "profile" ou "me" - utiliser l'ID de l'utilisateur authentifié
+      if (id === 'me' || id === 'profile') {
+        console.log('Récupération du profil de l\'utilisateur authentifié');
+        const user = await User.findById(req.user.id).select('-password');
+        
+        if (!user) {
+          return res.status(404).json({ message: 'Utilisateur authentifié non trouvé' });
+        }
+        
+        return res.status(200).json(user);
+      }
+  
+      // Validation normale pour les autres cas
       if (!mongoose.Types.ObjectId.isValid(id)) {
         return res.status(400).json({ message: 'ID utilisateur invalide' });
       }
