@@ -49,22 +49,22 @@ class SubscriptionService {
         currentSubscription._id,
         {
           plan: updateData.plan,
-          'paymentInfo.method': updateData.paymentMethod 
-            ? sanitizeHtml(updateData.paymentMethod) 
+          'paymentInfo.method': updateData.paymentMethod
+            ? sanitizeHtml(updateData.paymentMethod)
             : currentSubscription.paymentInfo.method,
           // Ajuster la date de fin selon le nouveau plan
           endDate: this.calculateEndDate(updateData.plan)
         },
-        { 
-          new: true, 
+        {
+          new: true,
           runValidators: true,
-          session 
+          session
         }
       );
 
       // Mettre à jour l'utilisateur avec le nouveau plan
       await User.findByIdAndUpdate(
-        userId, 
+        userId,
         { role: this.mapPlanToRole(updateData.plan) },
         { session }
       );
@@ -75,8 +75,89 @@ class SubscriptionService {
       return updatedSubscription;
     } catch (error) {
       await session.abortTransaction();
-      
+
       logger.error('Erreur lors de la mise à jour de l\'abonnement', error);
+      throw error;
+    } finally {
+      session.endSession();
+    }
+  }
+
+  // Obtenir ou créer un abonnement suite à un paiement
+  static async getOrCreateSubscription(subscriptionData) {
+    const session = await mongoose.startSession();
+
+    try {
+      session.startTransaction();
+
+      const { userId, plan, paymentMethod, externalReferenceId, status } = subscriptionData;
+
+      // Vérifier si l'utilisateur existe
+      const user = await User.findById(userId);
+      if (!user) {
+        throw new Error(`Utilisateur non trouvé: ${userId}`);
+      }
+
+      // Vérifier si l'utilisateur a déjà un abonnement actif
+      let subscription = await Subscription.findOne({
+        userId,
+        status: 'active'
+      });
+
+      if (subscription) {
+        // Mettre à jour l'abonnement existant
+        subscription = await Subscription.findByIdAndUpdate(
+          subscription._id,
+          {
+            plan,
+            status,
+            endDate: this.calculateEndDate(plan),
+            'paymentInfo.method': paymentMethod,
+            'metadata.externalReferenceId': externalReferenceId
+          },
+          {
+            new: true,
+            runValidators: true,
+            session
+          }
+        );
+      } else {
+        // Créer un nouvel abonnement
+        subscription = new Subscription({
+          userId,
+          plan,
+          startDate: new Date(),
+          endDate: this.calculateEndDate(plan),
+          status,
+          paymentInfo: {
+            method: paymentMethod
+          },
+          metadata: {
+            externalReferenceId
+          }
+        });
+
+        await subscription.save({ session });
+      }
+
+      // Mettre à jour l'utilisateur avec le nouveau plan et référence d'abonnement
+      await User.findByIdAndUpdate(
+        userId,
+        {
+          role: this.mapPlanToRole(plan),
+          activeSubscription: subscription._id
+        },
+        { session }
+      );
+
+      await session.commitTransaction();
+
+      logger.info(`Abonnement mis à jour/créé pour l'utilisateur ${userId}: ${plan}`);
+      return subscription;
+    } catch (error) {
+      await session.abortTransaction();
+
+      logger.error('Erreur lors de la gestion d\'abonnement', error);
       throw error;
     } finally {
       session.endSession();
@@ -108,18 +189,18 @@ class SubscriptionService {
           status: 'canceled',
           endDate: new Date() // Fin immédiate
         },
-        { 
+        {
           new: true,
-          session 
+          session
         }
       );
 
       // Réinitialiser les informations utilisateur
       await User.findByIdAndUpdate(
-        userId, 
-        { 
-          role: 'user', 
-          activeSubscription: null 
+        userId,
+        {
+          role: 'user',
+          activeSubscription: null
         },
         { session }
       );
@@ -130,7 +211,7 @@ class SubscriptionService {
       return canceledSubscription;
     } catch (error) {
       await session.abortTransaction();
-      
+
       logger.error('Erreur lors de l\'annulation de l\'abonnement', error);
       throw error;
     } finally {
@@ -158,8 +239,8 @@ class SubscriptionService {
         endDate: this.calculateEndDate(reactivationData.plan),
         status: 'active',
         paymentInfo: {
-          method: reactivationData.paymentMethod 
-            ? sanitizeHtml(reactivationData.paymentMethod) 
+          method: reactivationData.paymentMethod
+            ? sanitizeHtml(reactivationData.paymentMethod)
             : ''
         }
       });
@@ -168,10 +249,10 @@ class SubscriptionService {
 
       // Mettre à jour l'utilisateur
       await User.findByIdAndUpdate(
-        userId, 
-        { 
+        userId,
+        {
           role: this.mapPlanToRole(reactivationData.plan),
-          activeSubscription: newSubscription._id 
+          activeSubscription: newSubscription._id
         },
         { session }
       );
@@ -182,7 +263,7 @@ class SubscriptionService {
       return newSubscription;
     } catch (error) {
       await session.abortTransaction();
-      
+
       logger.error('Erreur lors de la réactivation de l\'abonnement', error);
       throw error;
     } finally {
@@ -192,10 +273,10 @@ class SubscriptionService {
 
   // Récupérer l'historique des abonnements
   static async getSubscriptionHistory(userId, options = {}) {
-    const { 
-      limit = 50, 
-      page = 1, 
-      status 
+    const {
+      limit = 50,
+      page = 1,
+      status
     } = options;
 
     try {
@@ -251,7 +332,7 @@ class SubscriptionService {
   // Méthodes utilitaires privées
   static calculateEndDate(plan) {
     const endDate = new Date();
-    switch(plan) {
+    switch (plan) {
       case 'free':
         endDate.setMonth(endDate.getMonth() + 1); // 1 mois
         break;
@@ -269,7 +350,7 @@ class SubscriptionService {
   }
 
   static mapPlanToRole(plan) {
-    switch(plan) {
+    switch (plan) {
       case 'standard': return 'user';
       case 'premium': return 'premium';
       case 'enterprise': return 'admin';
