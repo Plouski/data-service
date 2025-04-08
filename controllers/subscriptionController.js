@@ -82,32 +82,42 @@ class SubscriptionController {
   // Dans controllers/subscriptionController.js, ajoutez cette méthode complète
   static async updateFromPaymentService(req, res) {
     try {
+      console.log("Début de updateFromPaymentService");
+      console.log("Données reçues:", JSON.stringify(req.body));
+      console.log("isServiceRequest:", req.isServiceRequest);
+      
       // Vérifier que la requête vient bien d'un autre service via l'API key
       if (!req.isServiceRequest) {
+        console.log("Accès non autorisé - isServiceRequest est false");
         return res.status(403).json({
           message: 'Accès non autorisé'
         });
       }
-  
+    
       const { userId, plan, paymentMethod, sessionId, status, stripeCustomerId, stripePriceId } = req.body;
-  
-      logger.info(`Mise à jour d'abonnement depuis le service de paiement pour l'utilisateur ${userId}`);
-  
+    
+      console.log('Recherche de l\'utilisateur:', userId);
+    
       // Trouver l'utilisateur correspondant
       const user = await User.findById(userId);
       if (!user) {
+        console.log(`Utilisateur non trouvé pour l'ID: ${userId}`);
         return res.status(404).json({
           message: 'Utilisateur non trouvé'
         });
       }
-  
+      
+      console.log('Utilisateur trouvé:', user.email);
+    
       // Vérifier si l'utilisateur a déjà un abonnement actif
+      console.log('Recherche d\'un abonnement actif');
       let subscription = await Subscription.findOne({
         userId,
         status: { $in: ['active', 'pending'] }
       });
-  
+    
       if (subscription) {
+        console.log('Abonnement existant trouvé:', subscription._id);
         // Mettre à jour l'abonnement existant
         subscription.plan = plan;
         subscription.status = status || 'pending';
@@ -124,7 +134,9 @@ class SubscriptionController {
         subscription.set('metadata.sessionId', sessionId);
         
         await subscription.save();
+        console.log('Abonnement existant mis à jour avec succès');
       } else {
+        console.log('Création d\'un nouvel abonnement');
         // Créer un nouvel abonnement
         subscription = new Subscription({
           userId,
@@ -140,12 +152,14 @@ class SubscriptionController {
         });
         
         await subscription.save();
+        console.log('Nouvel abonnement créé avec ID:', subscription._id);
         
         // Mettre à jour l'utilisateur avec le nouvel abonnement
         user.activeSubscription = subscription._id;
         await user.save();
+        console.log('Utilisateur mis à jour avec le nouvel abonnement');
       }
-  
+    
       // Mettre à jour le rôle de l'utilisateur en fonction du plan
       if (status === 'active') {
         if (plan === 'premium' || plan === 'enterprise') {
@@ -154,13 +168,17 @@ class SubscriptionController {
           user.role = 'user';
         }
         await user.save();
+        console.log('Rôle utilisateur mis à jour:', user.role);
       }
-  
+    
+      console.log("Fin de updateFromPaymentService avec succès");
       res.status(200).json({
         success: true,
         subscription
       });
     } catch (error) {
+      console.log("Erreur dans updateFromPaymentService:", error.message);
+      console.log("Stack trace:", error.stack);
       logger.error("Erreur lors de la mise à jour d'abonnement depuis le service de paiement", error);
       res.status(500).json({
         message: "Erreur lors de la mise à jour d'abonnement",

@@ -100,7 +100,7 @@ router.post(
 
 router.get(
   '/status/:userId',
-  authMiddleware,
+  serviceAuthMiddleware,
   SubscriptionController.getSubscriptionStatus
 );
 module.exports = router;
