@@ -1,4 +1,6 @@
 const SubscriptionService = require('../services/subscriptionService');
+const Subscription = require('../models/Subscription');
+const User = require('../models/User');
 const { validationResult } = require('express-validator');
 const logger = require('../utils/logger');
 const sanitizeHtml = require('sanitize-html');
@@ -77,6 +79,7 @@ class SubscriptionController {
     }
   }
 
+  // Dans controllers/subscriptionController.js, ajoutez cette méthode complète
   static async updateFromPaymentService(req, res) {
     try {
       // Vérifier que la requête vient bien d'un autre service via l'API key
@@ -85,21 +88,74 @@ class SubscriptionController {
           message: 'Accès non autorisé'
         });
       }
-
-      const { userId, plan, paymentMethod, sessionId, status } = req.body;
-
+  
+      const { userId, plan, paymentMethod, sessionId, status, stripeCustomerId, stripePriceId } = req.body;
+  
       logger.info(`Mise à jour d'abonnement depuis le service de paiement pour l'utilisateur ${userId}`);
-
-      // Utilisez le service d'abonnement pour effectuer la mise à jour
-      // Si l'utilisateur a déjà un abonnement, le mettre à jour, sinon en créer un nouveau
-      const subscription = await SubscriptionService.getOrCreateSubscription({
+  
+      // Trouver l'utilisateur correspondant
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({
+          message: 'Utilisateur non trouvé'
+        });
+      }
+  
+      // Vérifier si l'utilisateur a déjà un abonnement actif
+      let subscription = await Subscription.findOne({
         userId,
-        plan,
-        paymentMethod,
-        externalReferenceId: sessionId,
-        status
+        status: { $in: ['active', 'pending'] }
       });
-
+  
+      if (subscription) {
+        // Mettre à jour l'abonnement existant
+        subscription.plan = plan;
+        subscription.status = status || 'pending';
+        
+        // Mettre à jour les informations de paiement
+        if (!subscription.paymentInfo) {
+          subscription.paymentInfo = {};
+        }
+        subscription.paymentInfo.method = paymentMethod;
+        subscription.paymentInfo.stripeCustomerId = stripeCustomerId;
+        subscription.paymentInfo.stripePriceId = stripePriceId;
+        
+        // Mettre à jour les métadonnées
+        subscription.set('metadata.sessionId', sessionId);
+        
+        await subscription.save();
+      } else {
+        // Créer un nouvel abonnement
+        subscription = new Subscription({
+          userId,
+          plan,
+          startDate: new Date(),
+          status: status || 'pending',
+          paymentInfo: {
+            method: paymentMethod,
+            stripeCustomerId,
+            stripePriceId
+          },
+          metadata: { sessionId } // Utiliser un objet simple au lieu d'une Map
+        });
+        
+        await subscription.save();
+        
+        // Mettre à jour l'utilisateur avec le nouvel abonnement
+        user.activeSubscription = subscription._id;
+        await user.save();
+      }
+  
+      // Mettre à jour le rôle de l'utilisateur en fonction du plan
+      if (status === 'active') {
+        if (plan === 'premium' || plan === 'enterprise') {
+          user.role = 'premium';
+        } else {
+          user.role = 'user';
+        }
+        await user.save();
+      }
+  
       res.status(200).json({
         success: true,
         subscription
