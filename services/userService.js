@@ -1,5 +1,9 @@
 const User = require('../models/User');
 const Subscription = require('../models/Subscription');
+const AiHistory = require('../models/AiHistory');
+const Favorite = require('../models/Favorite');
+const Payment = require('../models/Payment');
+const Trip = require('../models/Trip');
 const mongoose = require('mongoose');
 const logger = require('../utils/logger');
 
@@ -106,6 +110,10 @@ class UserService {
       // Supprimer l'utilisateur et ses données associées
       await User.findByIdAndDelete(userId, { session });
       await Subscription.deleteMany({ userId }, { session });
+      await AiHistory.deleteMany({ userId }, { session });
+      await Favorite.deleteMany({ userId }, { session });
+      await Payment.deleteMany({ userId }, { session });
+      await Trip.deleteMany({ userId }, { session });
       // Ajouter la suppression d'autres collections liées (favoris, trips, etc.)
 
       await session.commitTransaction();

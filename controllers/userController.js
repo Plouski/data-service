@@ -178,26 +178,60 @@ class UserController {
   }
 
   // Supprimer le compte utilisateur
-  static async deleteUserAccount(req, res) {
-    try {
-      const user = await User.findByIdAndDelete(req.user.id);
-
-      if (!user) {
-        return res.status(404).json({ message: 'Utilisateur non trouvé' });
-      }
-
-      // Journaliser la suppression
-      logger.info(`Compte utilisateur supprimé: ${user.email}`);
-
-      res.status(200).json({ message: 'Compte supprimé avec succès' });
-    } catch (error) {
-      logger.error('Erreur lors de la suppression du compte', error);
-      res.status(500).json({
-        message: 'Erreur lors de la suppression du compte',
-        error: error.message
-      });
+  // userController.js
+static async deleteUserAccount(req, res) {
+  const session = await mongoose.startSession();
+  
+  try {
+    session.startTransaction();
+    const userId = req.user.id;
+    
+    // Supprimer l'utilisateur
+    const user = await User.findByIdAndDelete(userId, { session });
+    
+    if (!user) {
+      return res.status(404).json({ message: 'Utilisateur non trouvé' });
     }
+    
+    // Supprimer les abonnements associés
+    await Subscription.deleteMany({ userId }, { session });
+    
+    // Supprimer les roadtrips
+    await Trip.deleteMany({ userId }, { session });
+    
+    // Supprimer les historiques d'interactions IA
+    await AiHistory.deleteMany({ userId }, { session });
+    
+    // Supprimer les favoris
+    await Favorite.deleteMany({ userId }, { session });
+    
+    // Supprimer les paiements
+    await Payment.deleteMany({ userId }, { session });
+    
+    // Autres suppressions potentielles:
+    // - Commentaires
+    // - Notifications
+    // - Collaborations
+    // - etc.
+    
+    await session.commitTransaction();
+    
+    // Journaliser la suppression
+    logger.info(`Compte utilisateur et toutes ses données associées supprimés: ${user.email}`);
+    
+    res.status(200).json({ message: 'Compte et toutes les données associées supprimés avec succès' });
+  } catch (error) {
+    await session.abortTransaction();
+    logger.error('Erreur lors de la suppression du compte et des données', error);
+    
+    res.status(500).json({
+      message: 'Erreur lors de la suppression du compte',
+      error: error.message
+    });
+  } finally {
+    session.endSession();
   }
+}
 }
 
 module.exports = UserController;
