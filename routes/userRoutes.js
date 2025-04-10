@@ -66,7 +66,6 @@ router.get('/email/:email',
 router.post('/verify-account',
   registerValidation,
   validateRequest,
-  // UserController.
 );
 
 router.post('/reset-password', 

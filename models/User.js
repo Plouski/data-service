@@ -53,27 +53,21 @@ const UserSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  lastLogin: {
-    type: Date,
-    default: null
+  {
+    timestamps: true
   }
-}, {
-  timestamps: true,
-  // Ajouter des indexes pour optimiser les performances
-  indexes: [
-    { email: 1 },
-    { role: 1 },
-    { createdAt: -1 }
-  ]
-});
+);
+
+// Indexes
+UserSchema.index({ email: 1 });
+UserSchema.index({ role: 1 });
+UserSchema.index({ createdAt: -1 });
 
 // Hook de pré-sauvegarde pour hasher le mot de passe
 UserSchema.pre('save', async function (next) {
-  // Hasher le mot de passe uniquement s'il a été modifié
   if (!this.isModified('password')) return next();
 
   try {
-    // Génération du sel et hashage du mot de passe
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
     next();
@@ -82,7 +76,6 @@ UserSchema.pre('save', async function (next) {
   }
 });
 
-// Méthode pour comparer les mots de passe
 UserSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };
@@ -98,6 +91,11 @@ UserSchema.methods.toPublicJSON = function () {
   delete obj.password;
   delete obj.__v;
   return obj;
+};
+
+// Méthodes statiques
+UserSchema.statics.findByEmail = function (email) {
+  return this.findOne({ email: email.toLowerCase() });
 };
 
 const User = mongoose.model('User', UserSchema);

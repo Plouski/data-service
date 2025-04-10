@@ -54,9 +54,6 @@ app.use(express.urlencoded({
   limit: process.env.MAX_REQUEST_BODY_SIZE || '1mb'
 }));
 
-// Ajouter le middleware de sanitization
-// app.use(sanitizeInput);
-
 // Rate limiting pour prévenir les attaques par force brute
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
