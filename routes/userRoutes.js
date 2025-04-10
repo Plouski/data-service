@@ -47,55 +47,53 @@ const registerValidation = [
     .isLength({ max: 50 }).withMessage('Nom trop long')
 ];
 
-// Routes publiques
-//Inscription
-router.post('/register', registerValidation,validateRequest,UserController.createUser);
+router.post('/register',
+  registerValidation,
+  validateRequest,
+  UserController.createUser
+);
 
-//Google
-router.post('/oauth/google', UserController.handleGoogleOAuth);
+router.post('/login', 
+  validateRequest,
+  UserController.loginUser
+);
 
-//Facebook
-router.post('/oauth/facebook', UserController.handleFacebookOAuth);
+router.get('/email/:email', 
+  authMiddleware,
+  UserController.getUserByEmail
+);
 
-//Github
-router.post('/oauth/github', UserController.handleGithubOAuth);
+router.post('/verify-account',
+  registerValidation,
+  validateRequest,
+);
 
-//Connexion avec email
-router.post('/login', validateRequest,UserController.loginUser);
+router.post('/reset-password', 
+  UserController.resetPassword
+);
 
-//Reinitialiser le mdp oublié avec le code donné par notification-service
-router.post('/:userId/reset-password', UserController.createPasswordResetToken);
-router.post('/reset-password', UserController.resetPassword);
+router.get('/profile', 
+  authMiddleware,
+  UserController.getUserProfile
+);
 
-//Verifier le compte avec le token donné par notification-service
-router.get('/email/:email', UserController.getUserByEmail);
-router.post('/:userId/verify', UserController.createVerificationToken);
-router.post('/verify-account', UserController.verifyAccount);
-
-// Routes protégées
-// Recuperer tous les infos d'un utilisateur par son id
-router.get('/:id', authMiddleware, UserController.getUserById);
-
-// Recuperer le rofile
-router.get('/profile', authMiddleware,UserController.getUserProfile);
-
-// Modifier les infos du profile
-router.put('/profile', authMiddleware,
-  [
-    body('firstName')
-      .optional()
-      .isString().withMessage('Prénom invalide')
-      .isLength({ max: 50 }).withMessage('Prénom trop long'),
-    body('lastName')
-      .optional()
-      .isString().withMessage('Nom invalide')
-      .isLength({ max: 50 }).withMessage('Nom trop long')
-  ],
+router.put('/profile', 
+  authMiddleware,
   validateRequest,
   UserController.updateUserProfile
 );
 
-// Supprimer le compte
-router.delete('/account', authMiddleware,UserController.deleteUserAccount);
+router.put('/change-password', 
+  authMiddleware,
+  validateRequest,
+  (req, res, next) => UserController.changeUserPassword(req, res, next)
+);
+
+router.delete('/account', 
+  authMiddleware,
+  UserController.deleteUserAccount
+);
+
+router.post('/password-reset', UserController.storeResetToken);
 
 module.exports = router;

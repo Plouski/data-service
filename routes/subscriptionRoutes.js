@@ -1,7 +1,7 @@
 const express = require('express');
 const { body, query, param } = require('express-validator');
 const SubscriptionController = require('../controllers/subscriptionController');
-const { authMiddleware, serviceAuthMiddleware } = require('../middlewares/authMiddleware');
+const { authMiddleware } = require('../middlewares/authMiddleware');
 const validateRequest = require('../middlewares/validateRequest');
 
 const router = express.Router();
@@ -48,8 +48,8 @@ router.put(
 // Route pour mettre à jour un abonnement depuis le service de paiement
 router.post(
   '/update-from-payment',
-  serviceAuthMiddleware,
-  SubscriptionController.updateFromPaymentService
+  authMiddleware,
+  (req, res, next) => SubscriptionController.updateFromPaymentService(req, res, next)
 );
 
 router.delete(
@@ -100,7 +100,7 @@ router.post(
 
 router.get(
   '/status/:userId',
-  serviceAuthMiddleware,
+  authMiddleware,
   SubscriptionController.getSubscriptionStatus
 );
 module.exports = router;

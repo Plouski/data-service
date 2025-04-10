@@ -1,90 +1,57 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
-const UserSchema = new mongoose.Schema(
-  {
-    // Informations personnelles
-    firstName: { type: String, trim: true },
-    lastName: { type: String, trim: true },
-    email: {
-      type: String,
-      required: [true, 'Veuillez fournir une adresse email'],
-      unique: true,
-      sparse: true,
-      lowercase: true,
-      trim: true,
-      match: [
-        /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/,
-        'Adresse email invalide'
-      ]
+const UserSchema = new mongoose.Schema({
+  email: {
+    type: String,
+    required: [true, 'Veuillez fournir une adresse email'],
+    unique: true,
+    lowercase: true,
+    trim: true,
+    match: [/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, 'Adresse email invalide']
+  },
+  password: {
+    type: String,
+    required: function () {
+      // Le mot de passe est requis seulement si pas d'OAuth
+      return !this.oauth || Object.keys(this.oauth).length === 0;
     },
-    profilePicture: {
-      type: String,
-      default: null
-    },
-    role: {
-      type: String,
-      enum: ['user', 'premium', 'admin'],
-      default: 'user'
-    },
-
-    // Authentification
-    password: {
-      type: String,
-      minlength: [8, 'Le mot de passe doit contenir au moins 8 caractères'],
-      select: false,
-      required: function () {
-        return !this.oauth?.googleId && !this.oauth?.facebookId && !this.oauth?.appleId && !this.oauth?.githubId;
-      }
-    },
-    lastLogin: {
-      type: Date,
-      default: null
-    },
-
-    // Gestion des abonnements
-    activeSubscription: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Subscription',
-      default: null
-    },
-
-    // Authentification externe (OAuth)
-    oauth: {
-      googleId: { type: String, unique: true, sparse: true },
-      facebookId: { type: String, unique: true, sparse: true },
-      appleId: { type: String, unique: true, sparse: true }
-    },
-
-    // Réinitialisation du mot de passe
-    resetPasswordCode: {
-      type: String,
-      default: null,
-      trim: true
-    },
-    resetPasswordToken: {
-      type: String,
-      default: null,
-      trim: true
-    },
-    resetPasswordExpires: {
-      type: Date,
-      default: null
-    },
-
-    // Vérification d’email
-    verificationToken: {
-      type: String,
-      default: null
-    },
-    verificationTokenExpires: {
-      type: Date,
-      default: null
-    },
-    isVerified: {
-      type: Boolean,
-      default: false
-    }
+    minlength: [8, 'Le mot de passe doit contenir au moins 8 caractères'],
+    select: false
+  },
+  oauth: {
+    provider: String,
+    googleId: String,
+    facebookId: String,
+    githubId: String
+  },
+  resetPasswordToken: String,
+  resetPasswordExpires: Date,
+  role: {
+    type: String,
+    enum: ['user', 'premium', 'admin'],
+    default: 'user'
+  },
+  firstName: {
+    type: String,
+    trim: true
+  },
+  lastName: {
+    type: String,
+    trim: true
+  },
+  activeSubscription: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Subscription',
+    default: null
+  },
+  profilePicture: {
+    type: String,
+    default: null
+  },
+  isVerified: {
+    type: Boolean,
+    default: false
   },
   {
     timestamps: true
@@ -109,11 +76,16 @@ UserSchema.pre('save', async function (next) {
   }
 });
 
-// Méthodes d'instance
 UserSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };
 
+// Méthode statique pour trouver un utilisateur par email
+UserSchema.statics.findByEmail = function (email) {
+  return this.findOne({ email: email.toLowerCase() });
+};
+
+// Méthode pour obtenir un profil public sécurisé
 UserSchema.methods.toPublicJSON = function () {
   const obj = this.toObject();
   delete obj.password;
