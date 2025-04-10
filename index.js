@@ -20,6 +20,7 @@ const tripRoutes = require('./routes/tripRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes');
 const favoriteRoutes = require('./routes/favoriteRoutes');
 const aiRoutes = require('./routes/aiRoutes');
+const oauthRoutes = require('./routes/oauthRoutes');
 
 // Importer les middlewares
 const errorHandler = require('./middlewares/errorHandler');
@@ -72,6 +73,8 @@ app.use('/api/trips', tripRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/favorites', favoriteRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api', oauthRoutes);
+
 
 // Route de ping pour vérifier l'état du service
 app.get('/ping', (req, res) => {

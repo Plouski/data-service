@@ -47,57 +47,54 @@ const registerValidation = [
     .isLength({ max: 50 }).withMessage('Nom trop long')
 ];
 
-// Validation pour la connexion
-const loginValidation = [
-  body('email')
-    .isEmail().withMessage('Email invalide')
-    .normalizeEmail(),
-  body('password')
-    .notEmpty().withMessage('Mot de passe requis')
-];
-
-// Routes publiques
-router.post(
-  '/register', 
+router.post('/register',
   registerValidation,
   validateRequest,
   UserController.createUser
 );
 
-router.post(
-  '/login', 
+router.post('/login', 
   validateRequest,
   UserController.loginUser
 );
 
-// Routes protégées
-router.get(
-  '/profile', 
+router.get('/email/:email', 
+  authMiddleware,
+  UserController.getUserByEmail
+);
+
+router.post('/verify-account',
+  registerValidation,
+  validateRequest,
+  // UserController.
+);
+
+router.post('/reset-password', 
+  UserController.resetPassword
+);
+
+router.get('/profile', 
   authMiddleware,
   UserController.getUserProfile
 );
 
-router.put(
-  '/profile', 
+router.put('/profile', 
   authMiddleware,
-  [
-    body('firstName')
-      .optional()
-      .isString().withMessage('Prénom invalide')
-      .isLength({ max: 50 }).withMessage('Prénom trop long'),
-    body('lastName')
-      .optional()
-      .isString().withMessage('Nom invalide')
-      .isLength({ max: 50 }).withMessage('Nom trop long')
-  ],
   validateRequest,
   UserController.updateUserProfile
 );
 
-router.delete(
-  '/account', 
+router.put('/change-password', 
+  authMiddleware,
+  validateRequest,
+  (req, res, next) => UserController.changeUserPassword(req, res, next)
+);
+
+router.delete('/account', 
   authMiddleware,
   UserController.deleteUserAccount
 );
+
+router.post('/password-reset', UserController.storeResetToken);
 
 module.exports = router;

@@ -1,120 +1,122 @@
+// middlewares/authMiddleware.js - Amélioré
 const jwt = require('jsonwebtoken');
 const logger = require('../utils/logger');
-const User = require('../models/User');
 
-const authMiddleware = async (req, res, next) => {
+/**
+ * Middleware pour vérifier l'authentification utilisateur
+ * Vérifie que la requête contient un token JWT valide
+ */
+const authMiddleware = (req, res, next) => {
+  // Vérifier d'abord si c'est une requête de service
+  if (req.isServiceRequest) {
+    return next();
+  }
+
+  // Récupérer le token depuis différentes sources possibles
+  const authHeader = req.headers.authorization;
+  const tokenFromCookie = req.cookies?.token;
+  const tokenFromQuery = req.query.token;
+
+  let token = null;
+
+  // Priorité à l'en-tête Authorization
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (tokenFromCookie) {
+    token = tokenFromCookie;
+  } else if (tokenFromQuery) {
+    token = tokenFromQuery;
+  }
+
+  if (!token) {
+    return res.status(401).json({ 
+      success: false,
+      message: 'Authentification requise'
+    });
+  }
+
   try {
-    // Récupérer le token depuis l'en-tête Authorization
-    const authHeader = req.header('Authorization');
-    
-    if (!authHeader) {
-      return res.status(401).json({ 
-        message: 'Aucun token d\'authentification fourni' 
-      });
-    }
-
-    // Vérifier le format du token (Bearer TOKEN)
-    const parts = authHeader.split(' ');
-    if (parts.length !== 2 || parts[0] !== 'Bearer') {
-      return res.status(401).json({ 
-        message: 'Format de token invalide' 
-      });
-    }
-
-    const token = parts[1];
-
     // Vérifier et décoder le token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Vérifier si l'utilisateur existe encore
-    const user = await User.findById(decoded.userId);
-    
-    if (!user) {
-      return res.status(401).json({ 
-        message: 'Utilisateur non trouvé' 
-      });
-    }
-
-    // Ajouter l'utilisateur à l'objet de requête
+    // Stocker les informations utilisateur dans la requête
     req.user = {
-      id: user._id,
-      email: user.email,
-      role: user.role
+      userId: decoded.userId,
+      email: decoded.email,
+      role: decoded.role || 'user'
     };
 
-    // Journaliser l'accès
-    logger.info(`Authentification réussie pour ${user.email}`);
+    logger.debug('Utilisateur authentifié', {
+      userId: decoded.userId,
+      path: req.path,
+      method: req.method
+    });
 
     next();
   } catch (error) {
-    logger.error('Erreur d\'authentification', error);
+    logger.warn('Erreur de validation du token', {
+      error: error.message,
+      path: req.path,
+      method: req.method
+    });
 
-    // Gestion des erreurs spécifiques du token
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({ 
-        message: 'Token invalide' 
-      });
-    }
-
+    // Gestion des différents types d'erreurs JWT
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({ 
-        message: 'Token expiré' 
+        success: false,
+        message: 'Session expirée, veuillez vous reconnecter',
+        code: 'TOKEN_EXPIRED'
       });
     }
 
-    // Erreur générique
-    res.status(401).json({ 
-      message: 'Non autorisé',
-      error: error.message 
+    return res.status(401).json({ 
+      success: false,
+      message: 'Authentification invalide',
+      code: 'INVALID_TOKEN'
     });
   }
 };
 
-// Middleware pour vérifier les rôles
-const checkRole = (roles) => {
+/**
+ * Middleware pour vérifier les rôles utilisateur
+ * @param {Array} roles - Tableau des rôles autorisés
+ */
+const roleMiddleware = (roles = []) => {
   return (req, res, next) => {
-    // Vérifier si l'utilisateur a un rôle autorisé
-    if (!roles.includes(req.user.role)) {
-      logger.warn(`Tentative d'accès non autorisée - Rôle: ${req.user.role}`);
-      return res.status(403).json({ 
-        message: 'Accès refusé. Privilèges insuffisants.' 
+    // Vérifier si l'utilisateur est authentifié
+    if (!req.user) {
+      return res.status(401).json({ 
+        success: false,
+        message: 'Authentification requise'
       });
     }
+
+    // Si requête de service, bypass la vérification des rôles
+    if (req.isServiceRequest) {
+      return next();
+    }
+
+    // Vérifier si le rôle de l'utilisateur est dans la liste des rôles autorisés
+    if (roles.length > 0 && !roles.includes(req.user.role)) {
+      logger.warn('Accès refusé - rôle insuffisant', {
+        userId: req.user.userId,
+        userRole: req.user.role,
+        requiredRoles: roles,
+        path: req.path,
+        method: req.method
+      });
+
+      return res.status(403).json({ 
+        success: false,
+        message: 'Accès refusé - permissions insuffisantes'
+      });
+    }
+
     next();
   };
 };
 
-// Middleware de génération de token
-const generateToken = (user) => {
-  return jwt.sign(
-    { 
-      userId: user._id, 
-      email: user.email,
-      role: user.role 
-    },
-    process.env.JWT_SECRET,
-    { 
-      expiresIn: '24h' // Expiration du token
-    }
-  );
-};
-
-const serviceAuthMiddleware = (req, res, next) => {
-  const apiKey = req.headers['x-api-key'];
-  
-  if (!apiKey || apiKey !== process.env.SERVICE_API_KEY) {
-    return res.status(401).json({ message: 'Authentification de service invalide' });
-  }
-  
-  // Ajouter un contexte de service à la requête
-  req.isServiceRequest = true;
-  
-  next();
-};
-
 module.exports = {
   authMiddleware,
-  checkRole,
-  generateToken,
-  serviceAuthMiddleware
+  roleMiddleware
 };
