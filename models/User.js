@@ -53,13 +53,16 @@ const UserSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  {
-    timestamps: true
+  lastLogin: {
+    type: Date,
+    default: null
   }
-);
+}, {
+  timestamps: true  // Correctement ajouté ici
+});
 
 // Indexes
-UserSchema.index({ email: 1 });
+UserSchema.index({ email: 1 }, { unique: true }); // Index unique sur l'email
 UserSchema.index({ role: 1 });
 UserSchema.index({ createdAt: -1 });
 
@@ -91,11 +94,6 @@ UserSchema.methods.toPublicJSON = function () {
   delete obj.password;
   delete obj.__v;
   return obj;
-};
-
-// Méthodes statiques
-UserSchema.statics.findByEmail = function (email) {
-  return this.findOne({ email: email.toLowerCase() });
 };
 
 const User = mongoose.model('User', UserSchema);

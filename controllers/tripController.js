@@ -1,356 +1,291 @@
-const TripService = require('../services/tripService');
-const { validationResult } = require('express-validator');
-const logger = require('../utils/logger');
-const sanitizeHtml = require('sanitize-html');
+const TripService = require("../services/tripService");
+const Trip = require("../models/Trip");
+const Favorite = require("../models/Favorite");
+const { validationResult } = require("express-validator");
+const sanitizeHtml = require("sanitize-html");
+const logger = require("../utils/logger");
 
 class TripController {
-  // Créer un nouveau trip
+  // GET /roadtrips
+  static async getRoadtrips(req, res) {
+    try {
+      const { search, country, duration, tags, budget, bestSeason, onlyPremium, page = 1, limit = 20, adminView = "false" } = req.query;
+
+      const filters = {
+        query: search || "",
+        season: bestSeason,
+        country,
+        duration,
+        minBudget: budget ? parseInt(budget) : undefined,
+        onlyPremium: onlyPremium === "true",
+        tags,
+        limit: parseInt(limit),
+        page: parseInt(page),
+        adminView: adminView === "true", // ✅ ici !
+      };
+
+      logger.debug("Filtres appliqués", filters);
+
+      const result = await TripService.searchPublicTrips(filters);
+
+      res.status(200).json(result);
+    } catch (error) {
+      logger.error("Erreur getRoadtrips", error);
+      res.status(500).json({ message: "Erreur récupération des roadtrips", error: error.message });
+    }
+  }
+
+  static async getPublicTrips(req, res) {
+    try {
+      const trips = await Trip.find({ isPublished: true })
+      res.status(200).json({ trips })
+    } catch (error) {
+      res.status(500).json({ message: "Erreur serveur", error })
+    }
+  }
+
+  // GET /roadtrips/:id
+  static async getRoadtripById(req, res) {
+    try {
+      const trip = await TripService.getTripDetails(
+        req.params.id,
+        req.user?.userId || null,
+        req.user?.role || "user"
+      );
+
+      return res.status(200).json({ success: true, data: trip });
+    } catch (error) {
+      logger.error("Erreur lors de la récupération du roadtrip", error);
+      return res.status(404).json({
+        success: false,
+        message: error.message || "Roadtrip non trouvé",
+      });
+    }
+  }
+
+  // POST /roadtrips (admin only)
   static async createTrip(req, res) {
     try {
-      // Validation des erreurs de requête
+
+      if (!req.user) {
+        return res.status(401).json({ message: "Authentification requise" });
+      }
+
+      if (req.user.role !== "admin") {
+        return res.status(403).json({ message: "Accès refusé - Droits administrateur requis" });
+      }
+
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ 
-          errors: errors.array(),
-          message: 'Erreurs de validation des données' 
-        });
+        return res.status(400).json({ errors: errors.array() });
       }
 
-      // Nettoyer et valider les entrées
-      const sanitizedTripData = {
+      const data = {
+        userId: req.user.userId,
         title: sanitizeHtml(req.body.title),
-        description: sanitizeHtml(req.body.description || ''),
-        season: req.body.season,
-        steps: req.body.steps ? req.body.steps.map(step => ({
-          location: {
-            type: 'Point',
-            coordinates: step.location.coordinates,
-            address: sanitizeHtml(step.location.address || '').trim()
-          },
-          description: sanitizeHtml(step.description || ''),
-          expectedDuration: step.expectedDuration,
-          order: step.order
-        })) : [],
-        budget: req.body.budget,
-        difficulty: req.body.difficulty,
-        tags: (req.body.tags || []).map(tag => sanitizeHtml(tag)),
-        isPublic: req.body.isPublic || false,
-        estimatedTotalDistance: req.body.estimatedTotalDistance,
-        estimatedDuration: req.body.estimatedDuration
+        image: req.body.image || "/placeholder.svg",
+        country: sanitizeHtml(req.body.country || ""),
+        description: sanitizeHtml(req.body.description || ""),
+        duration: parseInt(req.body.duration) || 7,
+        budget: {
+          amount: parseFloat(req.body.budget?.amount || req.body.budget || 1000),
+          currency: sanitizeHtml(req.body.budget?.currency || "EUR"),
+        },
+        bestSeason: sanitizeHtml(req.body.bestSeason || ""),
+        isPremium: Boolean(req.body.isPremium),
+        isPublished: Boolean(req.body.isPublished),
+        tags: (req.body.tags || []).map((tag) => sanitizeHtml(tag)),
+        pointsOfInterest: (req.body.pointsOfInterest || []).map((poi) => ({
+          name: sanitizeHtml(poi.name),
+          description: sanitizeHtml(poi.description),
+          image: poi.image || "/placeholder.svg",
+        })),
+        itinerary: (req.body.itinerary || []).map((step) => ({
+          day: parseInt(step.day),
+          title: sanitizeHtml(step.title),
+          description: sanitizeHtml(step.description),
+          overnight: Boolean(step.overnight),
+        })),
       };
 
-      // Créer le trip via le service
-      const newTrip = await TripService.createTrip(req.user.id, sanitizedTripData);
+      logger.info(`Tentative de création d'un roadtrip par l'utilisateur ${req.user.userId}`);
 
-      // Journaliser la création du trip
-      logger.info(`Nouveau trip créé: ${newTrip._id} par ${req.user.email}`);
-
-      // Répondre avec le trip créé
-      res.status(201).json(newTrip);
+      const trip = await TripService.createTrip(data);
+      res.status(201).json(trip);
     } catch (error) {
-      logger.error('Erreur lors de la création du trip', error);
-      
-      // Gestion des erreurs spécifiques
-      if (error.message.includes('Limite de trips atteinte')) {
-        return res.status(403).json({ 
-          message: 'Limite de trips atteinte pour votre abonnement' 
-        });
-      }
-
-      res.status(500).json({ 
-        message: 'Erreur interne lors de la création du trip',
-        error: error.message 
-      });
+      logger.error("Erreur création roadtrip", error);
+      res.status(500).json({ message: "Erreur création", error: error.message });
     }
   }
 
-  // Récupérer les trips de l'utilisateur
-  static async getUserTrips(req, res) {
-    try {
-      const { 
-        limit, 
-        page, 
-        season, 
-        difficulty 
-      } = req.query;
-
-      const filters = {};
-      if (season) filters.season = season;
-      if (difficulty) filters.difficulty = difficulty;
-
-      const trips = await TripService.getUserTrips(req.user.id, {
-        limit: parseInt(limit) || 50,
-        page: parseInt(page) || 1,
-        filters
-      });
-
-      res.json(trips);
-    } catch (error) {
-      logger.error('Erreur lors de la récupération des trips', error);
-      res.status(500).json({ 
-        message: 'Erreur lors de la récupération des trips',
-        error: error.message 
-      });
-    }
-  }
-
-  // Mettre à jour un trip
+  // PUT /roadtrips/:id (admin only)
   static async updateTrip(req, res) {
     try {
-      // Validation des erreurs de requête
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ 
-          errors: errors.array(),
-          message: 'Erreurs de validation des données' 
-        });
+
+      if (!req.user) {
+        return res.status(401).json({ message: "Authentification requise" });
       }
 
-      const tripId = req.params.id;
+      if (req.user.role !== "admin") {
+        return res.status(403).json({ message: "Accès refusé - Droits administrateur requis" });
+      }
 
-      // Nettoyer les données de mise à jour
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
       const updateData = {
-        title: req.body.title ? sanitizeHtml(req.body.title) : undefined,
-        description: req.body.description ? sanitizeHtml(req.body.description) : undefined,
-        season: req.body.season,
-        steps: req.body.steps ? req.body.steps.map(step => ({
-          location: {
-            type: 'Point',
-            coordinates: step.location.coordinates,
-            address: sanitizeHtml(step.location.address || 'Adresse non spécifiée').trim()
-          },
-          description: sanitizeHtml(step.description || ''),
-          expectedDuration: step.expectedDuration,
-          order: step.order
-        })) : undefined,
-        budget: req.body.budget,
-        difficulty: req.body.difficulty,
-        tags: req.body.tags ? req.body.tags.map(tag => sanitizeHtml(tag)) : undefined,
-        isPublic: req.body.isPublic,
-        estimatedTotalDistance: req.body.estimatedTotalDistance,
-        estimatedDuration: req.body.estimatedDuration
+        userId: req.user.userId,
+        title: req.body.title && sanitizeHtml(req.body.title),
+        image: req.body.image,
+        country: req.body.country && sanitizeHtml(req.body.country),
+        description: req.body.description && sanitizeHtml(req.body.description),
+        duration: req.body.duration && parseInt(req.body.duration),
+        bestSeason: req.body.bestSeason && sanitizeHtml(req.body.bestSeason),
+        isPremium: typeof req.body.isPremium !== "undefined" ? Boolean(req.body.isPremium) : undefined,
+        isPublished: typeof req.body.isPublished !== "undefined" ? Boolean(req.body.isPublished) : undefined,
+        budget: req.body.budget ? {
+          amount: parseFloat(req.body.budget?.amount || req.body.budget),
+          currency: sanitizeHtml(req.body.budget?.currency || "EUR"),
+        } : undefined,
+        tags: req.body.tags && req.body.tags.map((tag) => sanitizeHtml(tag)),
+        pointsOfInterest: req.body.pointsOfInterest?.map((poi) => ({
+          name: sanitizeHtml(poi.name),
+          description: sanitizeHtml(poi.description),
+          image: poi.image || "/placeholder.svg",
+        })),
+        itinerary: req.body.itinerary?.map((step) => ({
+          day: parseInt(step.day),
+          title: sanitizeHtml(step.title),
+          description: sanitizeHtml(step.description),
+          overnight: Boolean(step.overnight),
+        })),
       };
 
-      // Filtrer les propriétés undefined
-      Object.keys(updateData).forEach(key => 
-        updateData[key] === undefined && delete updateData[key]
-      );
+      Object.keys(updateData).forEach((key) => updateData[key] === undefined && delete updateData[key]);
 
-      // Mettre à jour le trip
-      const updatedTrip = await TripService.updateTrip(
-        req.user.id, 
-        tripId, 
-        updateData
-      );
+      logger.info(`Tentative de mise à jour du roadtrip ${req.params.id} par l'utilisateur ${req.user.userId}`);
 
-      logger.info(`Trip mis à jour: ${tripId} par ${req.user.email}`);
-      res.json(updatedTrip);
+      const updated = await TripService.updateTrip(req.user.userId, req.params.id, updateData);
+      res.status(200).json(updated);
     } catch (error) {
-      logger.error('Erreur lors de la mise à jour du trip', error);
-      res.status(500).json({ 
-        message: 'Erreur lors de la mise à jour du trip',
-        error: error.message 
-      });
+      logger.error("Erreur updateTrip", error);
+      res.status(500).json({ message: "Erreur mise à jour", error: error.message });
     }
   }
 
-  // Supprimer un trip
+  // DELETE /roadtrips/:id (admin only)
   static async deleteTrip(req, res) {
     try {
-      const tripId = req.params.id;
 
-      await TripService.deleteTrip(req.user.id, tripId);
+      if (!req.user) {
+        return res.status(401).json({ message: "Authentification requise" });
+      }
 
-      logger.info(`Trip supprimé: ${tripId} par ${req.user.email}`);
-      res.status(200).json({ 
-        message: 'Trip supprimé avec succès' 
-      });
+      if (req.user.role !== "admin") {
+        return res.status(403).json({ message: "Accès refusé - Droits administrateur requis" });
+      }
+
+      logger.info(`Tentative de suppression du roadtrip ${req.params.id} par l'utilisateur ${req.user.userId}`);
+
+      await TripService.deleteTrip(req.user.userId, req.params.id);
+      res.status(200).json({ message: "Supprimé avec succès" });
     } catch (error) {
-      logger.error('Erreur lors de la suppression du trip', error);
-      res.status(500).json({ 
-        message: 'Erreur lors de la suppression du trip',
-        error: error.message 
-      });
+      logger.error("Erreur deleteTrip", error);
+      res.status(500).json({ message: "Erreur suppression", error: error.message });
     }
   }
 
-  // Rechercher des trips publics
-  static async searchPublicTrips(req, res) {
+  static async getRoadtripById(req, res) {
     try {
-      const { 
-        query, 
-        season, 
-        minBudget, 
-        maxBudget, 
-        difficulty,
-        limit,
-        page
-      } = req.query;
-
-      const searchResults = await TripService.searchPublicTrips({
-        query,
-        season,
-        minBudget: parseFloat(minBudget),
-        maxBudget: parseFloat(maxBudget),
-        difficulty,
-        limit: parseInt(limit) || 20,
-        page: parseInt(page) || 1
-      });
-
-      res.json(searchResults);
-    } catch (error) {
-      logger.error('Erreur lors de la recherche de trips publics', error);
-      res.status(500).json({ 
-        message: 'Erreur lors de la recherche de trips',
-        error: error.message 
-      });
-    }
-  }
-
-  // Obtenir les détails d'un trip spécifique
-  static async getTripDetails(req, res) {
-    try {
-      const tripId = req.params.id;
-
       const trip = await TripService.getTripDetails(
-        tripId, 
-        req.user.id
+        req.params.id,
+        req.user?.userId || null,
+        req.user?.role || "user"
       );
 
-      res.json(trip);
+      return res.status(200).json({ success: true, data: trip });
     } catch (error) {
-      logger.error('Erreur lors de la récupération des détails du trip', error);
-      res.status(500).json({ 
-        message: 'Erreur lors de la récupération des détails du trip',
-        error: error.message 
+      logger.error("Erreur lors de la récupération du roadtrip", error);
+      return res.status(404).json({
+        success: false,
+        message: error.message || "Roadtrip non trouvé",
       });
     }
   }
 
-  // Générer des statistiques de trips
-  static async getTripStatistics(req, res) {
+  static async incrementViewCount(req, res) {
     try {
-      const userId = req.user.id;
+      const { id } = req.params;
 
-      // Calculer diverses statistiques sur les trips de l'utilisateur
-      const statistics = await TripService.generateTripStatistics(userId);
+      const trip = await Trip.findByIdAndUpdate(
+        id,
+        { $inc: { views: 1 } },
+        { new: true }
+      );
 
-      res.json(statistics);
-    } catch (error) {
-      logger.error('Erreur lors de la génération des statistiques de trips', error);
-      res.status(500).json({ 
-        message: 'Erreur lors de la génération des statistiques',
-        error: error.message 
-      });
-    }
-  }
-
-  // Cloner un trip existant
-  static async cloneTrip(req, res) {
-    try {
-      const tripId = req.params.id;
-      const userId = req.user.id;
-
-      // Vérifier les droits et créer une copie du trip
-      const clonedTrip = await TripService.cloneTrip(userId, tripId);
-
-      logger.info(`Trip cloné: ${tripId} par ${req.user.email}`);
-      res.status(201).json(clonedTrip);
-    } catch (error) {
-      logger.error('Erreur lors du clonage du trip', error);
-      
-      if (error.message.includes('Limite de trips atteinte')) {
-        return res.status(403).json({ 
-          message: 'Limite de trips atteinte pour votre abonnement' 
-        });
+      if (!trip) {
+        return res.status(404).json({ message: "Roadtrip non trouvé" });
       }
 
-      res.status(500).json({ 
-        message: 'Erreur lors du clonage du trip',
-        error: error.message 
-      });
+      res.status(200).json({ success: true, views: trip.views });
+    } catch (error) {
+      console.error("Erreur incrementViewCount:", error);
+      res.status(500).json({ message: "Erreur interne", error: error.message });
     }
   }
 
-  // Ajouter des étapes à un trip existant
-  static async addTripSteps(req, res) {
+  static async toggleFavorite(req, res) {
     try {
-      // Validation des erreurs de requête
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ 
-          errors: errors.array(),
-          message: 'Erreurs de validation des données' 
-        });
+      const userId = req.user?.userId; // 👈 PAS `id`
+      const tripId = req.params?.id;
+  
+      if (!userId || !tripId) {
+        console.warn("❌ userId ou tripId manquant :", { userId, tripId });
+        return res.status(400).json({ message: "userId ou tripId manquant" });
       }
+  
+      const existing = await Favorite.findOne({ userId, tripId });
+  
+      if (existing) {
+        await Favorite.deleteOne({ _id: existing._id });
+        return res.status(200).json({ message: "Retiré des favoris", favorited: false });
+      }
+  
+      const favorite = new Favorite({ userId, tripId });
+      await favorite.save();
+  
+      return res.status(201).json({ message: "Ajouté aux favoris", favorited: true });
+    } catch (error) {
+      console.error("Erreur toggleFavorite :", error);
+      res.status(500).json({ message: "Erreur serveur", error: error.message });
+    }
+  }
 
-      const tripId = req.params.id;
-      const userId = req.user.id;
+  static async getFavoritesForUser(req, res) {
+    try {
+      const userId = req.user.userId;
+      console.error("userId :", userId);
 
-      // Nettoyer et valider les nouvelles étapes
-      const newSteps = req.body.steps.map(step => ({
-        location: {
-          type: 'Point',
-          coordinates: step.coordinates,
-          address: sanitizeHtml(step.address)
-        },
-        description: sanitizeHtml(step.description || ''),
-        expectedDuration: step.expectedDuration,
-        order: step.order
+      const favorites = await Favorite.find({ userId }).populate({
+        path: "tripId",
+        select: "title description country region image duration budget tags isPremium"
+      })
+
+      const roadtrips = favorites.map(fav => ({
+        ...fav.tripId.toObject(), // 👈 renomme tripId → trip
+        _favoriteId: fav._id,
+        notes: fav.notes,
+        priority: fav.priority
       }));
-
-      // Ajouter les étapes
-      const updatedTrip = await TripService.addTripSteps(
-        userId, 
-        tripId, 
-        newSteps
-      );
-
-      logger.info(`Étapes ajoutées au trip: ${tripId} par ${req.user.email}`);
-      res.json(updatedTrip);
+      return res.status(200).json({ roadtrips })
     } catch (error) {
-      logger.error('Erreur lors de l\'ajout d\'étapes au trip', error);
-      res.status(500).json({ 
-        message: 'Erreur lors de l\'ajout d\'étapes',
-        error: error.message 
-      });
+      console.error("Erreur getFavoritesForUser :", error)
+      res.status(500).json({ message: "Erreur serveur" })
     }
   }
 
-  // Exporter les données d'un trip
-  static async exportTrip(req, res) {
-    try {
-      const tripId = req.params.id;
-      const userId = req.user.id;
-      const format = req.query.format || 'json';
-
-      // Générer l'export
-      const exportData = await TripService.exportTrip(
-        userId, 
-        tripId, 
-        format
-      );
-
-      // Définir les en-têtes pour le téléchargement
-      res.setHeader(
-        'Content-Disposition', 
-        `attachment; filename=trip_${tripId}.${format}`
-      );
-      res.setHeader(
-        'Content-Type', 
-        format === 'csv' ? 'text/csv' : 'application/json'
-      );
-
-      logger.info(`Trip exporté: ${tripId} par ${req.user.email}`);
-      res.send(exportData);
-    } catch (error) {
-      logger.error('Erreur lors de l\'export du trip', error);
-      res.status(500).json({ 
-        message: 'Erreur lors de l\'export du trip',
-        error: error.message 
-      });
-    }
-  }
 }
 
 module.exports = TripController;

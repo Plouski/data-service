@@ -1,5 +1,5 @@
-const mongoose = require('mongoose');
-const slugify = require('slugify');
+const mongoose = require('mongoose')
+const slugify = require('slugify')
 
 const TripSchema = new mongoose.Schema({
   title: {
@@ -22,49 +22,6 @@ const TripSchema = new mongoose.Schema({
     ref: 'User',
     required: [true, 'Un utilisateur est requis']
   },
-  steps: [{
-    location: {
-      type: {
-        type: String,
-        enum: ['Point'],
-        default: 'Point'
-      },
-      coordinates: {
-        type: [Number],
-        required: [true, 'Des coordonnées sont requises']
-      },
-      address: {
-        type: String,
-        required: [true, 'Une adresse est requise'],
-        trim: true,
-        validate: {
-          validator: function(v) {
-            return v.trim().length > 0;
-          },
-          message: 'L\'adresse ne peut pas être vide'
-        }
-      }
-    },
-    description: {
-      type: String,
-      trim: true
-    },
-    expectedDuration: {
-      type: Number,
-      min: [0, 'La durée ne peut pas être négative']
-    },
-    order: {
-      type: Number,
-      min: [0, 'L\'ordre doit être positif']
-    }
-  }],
-  season: {
-    type: String,
-    enum: {
-      values: ['printemps', 'été', 'automne', 'hiver'],
-      message: 'Saison invalide'
-    }
-  },
   budget: {
     currency: {
       type: String,
@@ -76,30 +33,54 @@ const TripSchema = new mongoose.Schema({
       min: [0, 'Le budget ne peut pas être négatif']
     }
   },
-  difficulty: {
-    type: String,
-    enum: {
-      values: ['facile', 'moyen', 'difficile', 'expert'],
-      message: 'Niveau de difficulté invalide'
-    },
-    default: 'facile'
-  },
-  estimatedTotalDistance: {
-    type: Number, // en kilomètres
-    min: [0, 'La distance ne peut pas être négative']
-  },
   tags: [{
     type: String,
     trim: true
   }],
-  isPublic: {
+  image: {
+    type: String,
+    default: "/placeholder.svg?height=600&width=800"
+  },
+  country: {
+    type: String,
+    trim: true
+  },
+  duration: {
+    type: Number,
+    min: [1, 'La durée doit être d\'au moins un jour'],
+    default: 7
+  },
+  bestSeason: {
+    type: String,
+    trim: true
+  },
+  isPremium: {
     type: Boolean,
     default: false
   },
-  estimatedDuration: {
-    type: Number, // en jours
-    min: [1, 'La durée doit être d\'au moins un jour']
-  }
+  isPublished: {
+    type: Boolean,
+    default: false
+  },
+  pointsOfInterest: [{
+    name: { type: String, required: true, trim: true },
+    description: { type: String, trim: true },
+    image: {
+      type: String,
+      default: "/placeholder.svg?height=300&width=400"
+    }
+  }],
+  itinerary: [{
+    day: { type: Number, required: true },
+    title: { type: String, required: true, trim: true },
+    description: { type: String, trim: true },
+    overnight: { type: Boolean, default: false }
+  }],
+  views: {
+    type: Number,
+    default: 0,
+  },  
+
 }, {
   timestamps: true,
   indexes: [
@@ -108,22 +89,22 @@ const TripSchema = new mongoose.Schema({
     { 'budget.amount': 1 },
     { tags: 1 }
   ]
-});
+})
 
 // Créer un slug unique à partir du titre
-TripSchema.pre('save', function(next) {
+TripSchema.pre('save', function (next) {
   if (this.isModified('title')) {
     this.slug = slugify(this.title, {
       lower: true,
       strict: true,
       trim: true
-    }) + '-' + Date.now();
+    }) + '-' + Date.now()
   }
-  next();
-});
+  next()
+})
 
 // Méthode statique pour rechercher des trips
-TripSchema.statics.searchTrips = function(query) {
+TripSchema.statics.searchTrips = function (query) {
   return this.find({
     $or: [
       { title: { $regex: query, $options: 'i' } },
@@ -131,34 +112,19 @@ TripSchema.statics.searchTrips = function(query) {
       { tags: { $regex: query, $options: 'i' } }
     ],
     isPublic: true
-  });
-};
+  })
+}
 
-// Méthode virtuelle pour calculer la durée totale
-TripSchema.virtual('totalDuration').get(function() {
-  // Vérifier si steps existe et est un tableau
-  if (!this.steps || !Array.isArray(this.steps)) {
-    return 0;
-  }
-  
-  return this.steps.reduce((total, step) => 
-    total + (step.expectedDuration || 0), 0
-  );
-});
-
-// Personnaliser la transformation du document
+// Personnaliser la transformation du document JSON
 TripSchema.set('toJSON', {
   virtuals: true,
   transform: (doc, ret) => {
-    delete ret.__v;
-    // Ajouter une vérification supplémentaire
-    if (!ret.steps) {
-      ret.steps = [];
-    }
-    return ret;
+    delete ret.__v
+    if (!ret.steps) ret.steps = []
+    return ret
   }
-});
+})
 
-const Trip = mongoose.model('Trip', TripSchema);
+const Trip = mongoose.model('Trip', TripSchema)
 
-module.exports = Trip;
+module.exports = Trip

@@ -42,12 +42,14 @@ const authMiddleware = (req, res, next) => {
     // Stocker les informations utilisateur dans la requête
     req.user = {
       userId: decoded.userId,
+      // id: decoded.userId,
       email: decoded.email,
       role: decoded.role || 'user'
     };
 
     logger.debug('Utilisateur authentifié', {
       userId: decoded.userId,
+      // id: decoded.userId,
       path: req.path,
       method: req.method
     });
