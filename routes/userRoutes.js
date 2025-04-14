@@ -1,8 +1,9 @@
 const express = require('express');
 const { body } = require('express-validator');
 const UserController = require('../controllers/userController');
-const { authMiddleware } = require('../middlewares/authMiddleware');
 const validateRequest = require('../middlewares/validateRequest');
+const { authMiddleware, roleMiddleware } = require("../middlewares/authMiddleware");
+const isAdmin = roleMiddleware(["admin"]);
 
 const router = express.Router();
 
@@ -46,6 +47,8 @@ const registerValidation = [
     .isString().withMessage('Nom invalide')
     .isLength({ max: 50 }).withMessage('Nom trop long')
 ];
+
+router.get("/", authMiddleware, isAdmin, UserController.getUsers);
 
 router.post('/register',
   registerValidation,

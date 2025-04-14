@@ -8,6 +8,41 @@ const mongoose = require('mongoose');
 const logger = require('../utils/logger');
 
 class UserService {
+
+  // Rechercher des trips publics
+  static async searchUsers(searchOptions) {
+    const { query = '', limit = 20, page = 1 } = searchOptions;
+
+    try {
+      const searchQuery = {
+        isPublic: true,
+        $or: [
+          { email: { $regex: query, $options: 'i' } },
+          { firstName: { $regex: query, $options: 'i' } },
+          { lastName: { $regex: query, $options: 'i' } }
+        ]
+      };
+
+      const users = await User.find(searchQuery)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .select('-__v');
+
+      const total = await User.countDocuments(searchQuery);
+
+      return {
+        users,
+        total,
+        page,
+        totalPages: Math.ceil(total / limit)
+      };
+    } catch (error) {
+      logger.error("Erreur lors de la recherche d'utilisateur", error);
+      throw error;
+    }
+  }
+
   // Créer un nouvel utilisateur
   static async createUser(userData) {
     // Commencer une transaction pour garantir la cohérence des données

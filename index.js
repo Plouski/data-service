@@ -66,7 +66,7 @@ app.use(limiter);
 
 // Routes
 app.use('/api/users', userRoutes);
-app.use('/api/trips', tripRoutes);
+app.use('/api/roadtrips', tripRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/favorites', favoriteRoutes);
 app.use('/api/ai', aiRoutes);
