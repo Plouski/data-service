@@ -35,7 +35,7 @@ app.use(helmet());
 // Configuration CORS sécurisée
 const corsOptions = {
   origin: process.env.CORS_ORIGIN || '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
   optionsSuccessStatus: 200
@@ -55,14 +55,14 @@ app.use(express.urlencoded({
 }));
 
 // Rate limiting pour prévenir les attaques par force brute
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limite de 100 requêtes par IP
-  message: 'Trop de requêtes, veuillez réessayer plus tard',
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use(limiter);
+// const limiter = rateLimit({
+//   windowMs: 15 * 60 * 1000, // 15 minutes
+//   max: 100, // limite de 100 requêtes par IP
+//   message: 'Trop de requêtes, veuillez réessayer plus tard',
+//   standardHeaders: true,
+//   legacyHeaders: false,
+// });
+// app.use(limiter);
 
 // Routes
 app.use('/api/users', userRoutes);

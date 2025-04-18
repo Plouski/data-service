@@ -16,6 +16,7 @@ router.get("/:id", TripController.getRoadtripById); // GET /roadtrips/:id
 router.post("/", authMiddleware, isAdmin, TripController.createTrip); // POST /roadtrips
 router.put("/:id", authMiddleware, isAdmin, TripController.updateTrip); // PUT /roadtrips/:id
 router.delete("/:id", authMiddleware, isAdmin, TripController.deleteTrip); // DELETE /roadtrips/:id
+router.patch("/status/:id", authMiddleware, isAdmin, TripController.updateRoadtripStatus);
 
 router.post("/:id/view", TripController.incrementViewCount);
 
