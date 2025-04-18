@@ -1,4 +1,3 @@
-const TripService = require("../services/tripService");
 const Trip = require("../models/Trip");
 const Favorite = require("../models/Favorite");
 const { validationResult } = require("express-validator");
@@ -6,29 +5,38 @@ const sanitizeHtml = require("sanitize-html");
 const logger = require("../utils/logger");
 
 class TripController {
-  // GET /roadtrips
   static async getRoadtrips(req, res) {
     try {
       const { search, country, duration, tags, budget, bestSeason, onlyPremium, page = 1, limit = 20, adminView = "false" } = req.query;
 
       const filters = {
-        query: search || "",
-        season: bestSeason,
-        country,
-        duration,
-        minBudget: budget ? parseInt(budget) : undefined,
-        onlyPremium: onlyPremium === "true",
-        tags,
-        limit: parseInt(limit),
-        page: parseInt(page),
-        adminView: adminView === "true", // ✅ ici !
+        ...(adminView !== "true" && { isPublic: true }),
+        ...(onlyPremium === "true" && { isPremium: true }),
+        ...(bestSeason && { bestSeason }),
+        ...(country && { country }),
+        ...(duration && { duration: parseInt(duration) }),
+        ...(tags && { tags: { $in: tags.split(",") } }),
+        ...(budget && { "budget.amount": { $gte: parseInt(budget) } }),
       };
 
-      logger.debug("Filtres appliqués", filters);
+      if (search?.trim()) {
+        filters.$or = [
+          { title: { $regex: search, $options: "i" } },
+          { description: { $regex: search, $options: "i" } },
+          { tags: { $regex: search, $options: "i" } },
+        ];
+      }
 
-      const result = await TripService.searchPublicTrips(filters);
+      const skip = (parseInt(page) - 1) * parseInt(limit);
 
-      res.status(200).json(result);
+      const trips = await Trip.find(filters)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit));
+
+      const total = await Trip.countDocuments(filters);
+
+      res.status(200).json({ trips, total });
     } catch (error) {
       logger.error("Erreur getRoadtrips", error);
       res.status(500).json({ message: "Erreur récupération des roadtrips", error: error.message });
@@ -37,23 +45,40 @@ class TripController {
 
   static async getPublicTrips(req, res) {
     try {
-      const trips = await Trip.find({ isPublished: true })
-      res.status(200).json({ trips })
+      const trips = await Trip.find({ isPublished: true });
+      res.status(200).json({ trips });
     } catch (error) {
-      res.status(500).json({ message: "Erreur serveur", error })
+      res.status(500).json({ message: "Erreur serveur", error });
     }
   }
 
-  // GET /roadtrips/:id
   static async getRoadtripById(req, res) {
     try {
-      const trip = await TripService.getTripDetails(
-        req.params.id,
-        req.user?.userId || null,
-        req.user?.role || "user"
-      );
+      const trip = await Trip.findById(req.params.id);
 
-      return res.status(200).json({ success: true, data: trip });
+      if (!trip) throw new Error("Roadtrip non trouvé");
+
+      const userRole = req.user?.role || "user";
+      const userId = req.user?.userId || null;
+      const isAdmin = userRole === "admin";
+      const isPremiumUser = userRole === "premium";
+      const canAccessPremium = isAdmin || isPremiumUser || (trip.userId.toString() === userId);
+
+      const tripData = trip.toObject();
+      tripData.userAccess = { canAccessPremium, userRole };
+
+      if (trip.isPremium && !canAccessPremium) {
+        tripData.itinerary = tripData.itinerary?.map(step => ({
+          day: step.day,
+          title: step.title,
+          description: step.description,
+          overnight: step.overnight
+        })) || [];
+        tripData.notice = "Certaines informations sont réservées aux utilisateurs premium.";
+        tripData.callToAction = "Abonnez-vous pour débloquer l'itinéraire complet, la carte interactive et les conseils d'expert.";
+      }
+
+      return res.status(200).json({ success: true, data: tripData });
     } catch (error) {
       logger.error("Erreur lors de la récupération du roadtrip", error);
       return res.status(404).json({
@@ -63,16 +88,10 @@ class TripController {
     }
   }
 
-  // POST /roadtrips (admin only)
   static async createTrip(req, res) {
     try {
-
-      if (!req.user) {
-        return res.status(401).json({ message: "Authentification requise" });
-      }
-
-      if (req.user.role !== "admin") {
-        return res.status(403).json({ message: "Accès refusé - Droits administrateur requis" });
+      if (!req.user || req.user.role !== "admin") {
+        return res.status(403).json({ message: "Accès refusé - Admin requis" });
       }
 
       const errors = validationResult(req);
@@ -108,9 +127,9 @@ class TripController {
         })),
       };
 
-      logger.info(`Tentative de création d'un roadtrip par l'utilisateur ${req.user.userId}`);
+      const trip = new Trip(data);
+      await trip.save();
 
-      const trip = await TripService.createTrip(data);
       res.status(201).json(trip);
     } catch (error) {
       logger.error("Erreur création roadtrip", error);
@@ -118,16 +137,10 @@ class TripController {
     }
   }
 
-  // PUT /roadtrips/:id (admin only)
   static async updateTrip(req, res) {
     try {
-
-      if (!req.user) {
-        return res.status(401).json({ message: "Authentification requise" });
-      }
-
-      if (req.user.role !== "admin") {
-        return res.status(403).json({ message: "Accès refusé - Droits administrateur requis" });
+      if (!req.user || req.user.role !== "admin") {
+        return res.status(403).json({ message: "Accès refusé - Admin requis" });
       }
 
       const errors = validationResult(req);
@@ -165,9 +178,12 @@ class TripController {
 
       Object.keys(updateData).forEach((key) => updateData[key] === undefined && delete updateData[key]);
 
-      logger.info(`Tentative de mise à jour du roadtrip ${req.params.id} par l'utilisateur ${req.user.userId}`);
+      const updated = await Trip.findByIdAndUpdate(
+        req.params.id,
+        { $set: updateData },
+        { new: true, runValidators: true }
+      );
 
-      const updated = await TripService.updateTrip(req.user.userId, req.params.id, updateData);
       res.status(200).json(updated);
     } catch (error) {
       logger.error("Erreur updateTrip", error);
@@ -175,21 +191,13 @@ class TripController {
     }
   }
 
-  // DELETE /roadtrips/:id (admin only)
   static async deleteTrip(req, res) {
     try {
-
-      if (!req.user) {
-        return res.status(401).json({ message: "Authentification requise" });
+      if (!req.user || req.user.role !== "admin") {
+        return res.status(403).json({ message: "Accès refusé - Admin requis" });
       }
 
-      if (req.user.role !== "admin") {
-        return res.status(403).json({ message: "Accès refusé - Droits administrateur requis" });
-      }
-
-      logger.info(`Tentative de suppression du roadtrip ${req.params.id} par l'utilisateur ${req.user.userId}`);
-
-      await TripService.deleteTrip(req.user.userId, req.params.id);
+      await Trip.findByIdAndDelete(req.params.id);
       res.status(200).json({ message: "Supprimé avec succès" });
     } catch (error) {
       logger.error("Erreur deleteTrip", error);
@@ -197,38 +205,40 @@ class TripController {
     }
   }
 
-  static async getRoadtripById(req, res) {
-    try {
-      const trip = await TripService.getTripDetails(
-        req.params.id,
-        req.user?.userId || null,
-        req.user?.role || "user"
-      );
+  static async updateRoadtripStatus(req, res) {
+    const { id } = req.params;
+    const { isPublished } = req.body;
 
-      return res.status(200).json({ success: true, data: trip });
-    } catch (error) {
-      logger.error("Erreur lors de la récupération du roadtrip", error);
-      return res.status(404).json({
-        success: false,
-        message: error.message || "Roadtrip non trouvé",
+    if (typeof isPublished !== "boolean") {
+      return res.status(400).json({ message: "Le champ 'isPublished' doit être un booléen." });
+    }
+
+    try {
+      const roadtrip = await Trip.findById(id);
+      if (!roadtrip) return res.status(404).json({ message: "Roadtrip non trouvé." });
+
+      roadtrip.isPublished = isPublished;
+      await roadtrip.save();
+
+      res.status(200).json({
+        message: `Roadtrip ${isPublished ? "publié" : "dépublié"} avec succès.`,
+        roadtrip,
       });
+    } catch (error) {
+      console.error("Erreur lors de la mise à jour :", error);
+      res.status(500).json({ message: "Erreur serveur lors de la mise à jour." });
     }
   }
 
   static async incrementViewCount(req, res) {
     try {
       const { id } = req.params;
-
       const trip = await Trip.findByIdAndUpdate(
         id,
         { $inc: { views: 1 } },
         { new: true }
       );
-
-      if (!trip) {
-        return res.status(404).json({ message: "Roadtrip non trouvé" });
-      }
-
+      if (!trip) return res.status(404).json({ message: "Roadtrip non trouvé" });
       res.status(200).json({ success: true, views: trip.views });
     } catch (error) {
       console.error("Erreur incrementViewCount:", error);
@@ -238,24 +248,22 @@ class TripController {
 
   static async toggleFavorite(req, res) {
     try {
-      const userId = req.user?.userId; // 👈 PAS `id`
+      const userId = req.user?.userId;
       const tripId = req.params?.id;
-  
+
       if (!userId || !tripId) {
-        console.warn("❌ userId ou tripId manquant :", { userId, tripId });
         return res.status(400).json({ message: "userId ou tripId manquant" });
       }
-  
+
       const existing = await Favorite.findOne({ userId, tripId });
-  
       if (existing) {
         await Favorite.deleteOne({ _id: existing._id });
         return res.status(200).json({ message: "Retiré des favoris", favorited: false });
       }
-  
+
       const favorite = new Favorite({ userId, tripId });
       await favorite.save();
-  
+
       return res.status(201).json({ message: "Ajouté aux favoris", favorited: true });
     } catch (error) {
       console.error("Erreur toggleFavorite :", error);
@@ -266,26 +274,25 @@ class TripController {
   static async getFavoritesForUser(req, res) {
     try {
       const userId = req.user.userId;
-      console.error("userId :", userId);
 
       const favorites = await Favorite.find({ userId }).populate({
         path: "tripId",
         select: "title description country region image duration budget tags isPremium"
-      })
+      });
 
       const roadtrips = favorites.map(fav => ({
-        ...fav.tripId.toObject(), // 👈 renomme tripId → trip
+        ...fav.tripId.toObject(),
         _favoriteId: fav._id,
         notes: fav.notes,
         priority: fav.priority
       }));
-      return res.status(200).json({ roadtrips })
+
+      return res.status(200).json({ roadtrips });
     } catch (error) {
-      console.error("Erreur getFavoritesForUser :", error)
-      res.status(500).json({ message: "Erreur serveur" })
+      console.error("Erreur getFavoritesForUser :", error);
+      res.status(500).json({ message: "Erreur serveur" });
     }
   }
-
 }
 
 module.exports = TripController;
