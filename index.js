@@ -17,7 +17,6 @@ validateEnvironmentVariables();
 // Importer les routes
 const userRoutes = require('./routes/userRoutes');
 const tripRoutes = require('./routes/tripRoutes');
-const subscriptionRoutes = require('./routes/subscriptionRoutes');
 const favoriteRoutes = require('./routes/favoriteRoutes');
 const aiRoutes = require('./routes/aiRoutes');
 const oauthRoutes = require('./routes/oauthRoutes');
@@ -67,7 +66,6 @@ app.use(express.urlencoded({
 // Routes
 app.use('/api/users', userRoutes);
 app.use('/api/roadtrips', tripRoutes);
-app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/favorites', favoriteRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api', oauthRoutes);

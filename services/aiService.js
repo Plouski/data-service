@@ -1,5 +1,4 @@
 const AiHistory = require('../models/AiHistory');
-const Subscription = require('../models/Subscription');
 const logger = require('../utils/logger');
 const mongoose = require('mongoose');
 
