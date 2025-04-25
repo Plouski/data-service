@@ -1,4 +1,8 @@
-const User = require("../models/User"); // à adapter selon ton modèle
+const User = require("../models/User");
+const AiHistory = require("../models/AiHistory");
+const Favorite = require("../models/Favorite");
+const Subscription = require("../models/Subscription");
+const Trip = require("../models/Trip");
 const mongoose = require("mongoose");
 
 /**
@@ -70,17 +74,25 @@ exports.deleteUser = async (req, res) => {
   try {
     const userId = req.params.id;
 
-    console.log("🔍 Suppression de l'utilisateur:", userId);
-
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       return res.status(400).json({ message: "ID utilisateur invalide" });
     }
 
-    const deleted = await User.findByIdAndDelete(userId);
+    console.log("🧨 Suppression utilisateur + données associées:", userId);
 
+    // 1. Supprimer les données liées
+    await Promise.all([
+      AiHistory.deleteMany({ userId }),
+      Favorite.deleteMany({ userId }),
+      Subscription.deleteMany({ userId }),
+      Trip.deleteMany({ userId }),
+    ]);
+
+    // 2. Supprimer l'utilisateur lui-même
+    const deleted = await User.findByIdAndDelete(userId);
     if (!deleted) return res.status(404).json({ message: "Utilisateur non trouvé" });
 
-    res.status(200).json({ message: "Utilisateur supprimé avec succès" });
+    res.status(200).json({ message: "Utilisateur et données associées supprimés avec succès" });
   } catch (err) {
     console.error("Erreur deleteUser:", err);
     res.status(500).json({ message: "Erreur lors de la suppression de l'utilisateur" });
