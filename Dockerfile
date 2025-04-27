@@ -1,20 +1,26 @@
-# Utiliser une image Node.js officielle comme base
-FROM node:18-alpine
+# Choisir une image Node stable
+FROM node:20
 
-# Définir le répertoire de travail dans le conteneur
-WORKDIR /usr/src/app
+# Créer un dossier de travail
+WORKDIR /app
 
-# Copier package.json et package-lock.json
+# Copier les fichiers package.json et package-lock.json
 COPY package*.json ./
 
-# Installer les dépendances
-RUN npm install --production
+# Fixer les problèmes de connexion NPM dans Docker
+RUN npm config set registry https://registry.npmjs.org/
 
-# Copier les fichiers du projet
+# Installer nodemon globalement (dev tools)
+RUN npm install -g nodemon
+
+# Installer les dépendances du projet
+RUN npm install
+
+# Copier tout le code source
 COPY . .
 
-# Exposer le port sur lequel le service va tourner
+# Exposer le port par défaut (à adapter si nécessaire)
 EXPOSE 5002
 
-# Commande pour démarrer le service
-CMD ["node", "index.js"]
+# Lancer le service
+CMD ["npm", "run", "dev"]

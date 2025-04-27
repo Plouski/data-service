@@ -1,37 +1,33 @@
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
-const cors = require('cors');
 const helmet = require('helmet');
+const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 
-// Importer la configuration des variables d'environnement
-const { 
-  loadEnvironmentVariables, 
-  validateEnvironmentVariables 
-} = require('./config/dotenv');
-
-// Charger et valider les variables d'environnement
-loadEnvironmentVariables();
-validateEnvironmentVariables();
-
-// Importer les routes
+const logger = require('./utils/logger');
+const { loadEnvironmentVariables, validateEnvironmentVariables } = require('./config/dotenv');
 const userRoutes = require('./routes/userRoutes');
 const tripRoutes = require('./routes/tripRoutes');
 const favoriteRoutes = require('./routes/favoriteRoutes');
 const aiRoutes = require('./routes/aiRoutes');
 const oauthRoutes = require('./routes/oauthRoutes');
-
-// Importer les middlewares
+const metricsRoutes = require('./routes/metricsRoutes');
+const { httpRequestsTotal, httpDurationHistogram } = require('./services/metricsServices');
 const errorHandler = require('./middlewares/errorHandler');
-const logger = require('./utils/logger');
 
 const app = express();
 const PORT = process.env.PORT || 5002;
 
-// Middlewares de sécurité et de configuration
+console.log('🔥 Lancement du serveur...');
+
+// ───────────── Charger et valider .env ─────────────
+loadEnvironmentVariables();
+validateEnvironmentVariables();
+
+// ───────────── Middlewares globaux ─────────────
 app.use(helmet());
 
-// Configuration CORS sécurisée
 const corsOptions = {
   origin: process.env.CORS_ORIGIN || '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
@@ -41,84 +37,91 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 
-// Parser les requêtes JSON avec limite de taille
-app.use(express.json({ 
-  limit: process.env.MAX_REQUEST_BODY_SIZE || '1mb',
-  strict: true  // Rejeter les payloads JSON malformés
-}));
+app.use(express.json({ limit: process.env.MAX_REQUEST_BODY_SIZE || '1mb', strict: true }));
+app.use(express.urlencoded({ extended: true, limit: process.env.MAX_REQUEST_BODY_SIZE || '1mb' }));
 
-// Parser les requêtes URL-encoded
-app.use(express.urlencoded({ 
-  extended: true,
-  limit: process.env.MAX_REQUEST_BODY_SIZE || '1mb'
-}));
-
-// Rate limiting pour prévenir les attaques par force brute
+// ───────────── Rate Limiting (optionnel) ─────────────
 // const limiter = rateLimit({
-//   windowMs: 15 * 60 * 1000, // 15 minutes
-//   max: 100, // limite de 100 requêtes par IP
+//   windowMs: 15 * 60 * 1000,
+//   max: 100,
 //   message: 'Trop de requêtes, veuillez réessayer plus tard',
 //   standardHeaders: true,
 //   legacyHeaders: false,
 // });
 // app.use(limiter);
 
-// Routes
+// ───────────── Metrics Middleware ─────────────
+app.use((req, res, next) => {
+  const start = process.hrtime();
+
+  res.on('finish', () => {
+    const duration = process.hrtime(start);
+    const seconds = duration[0] + duration[1] / 1e9;
+
+    httpRequestsTotal.inc({
+      method: req.method,
+      route: req.route ? req.route.path : req.path,
+      status_code: res.statusCode,
+    });
+
+    httpDurationHistogram.observe({
+      method: req.method,
+      route: req.route ? req.route.path : req.path,
+      status_code: res.statusCode,
+    }, seconds);
+  });
+
+  next();
+});
+
+// ───────────── Routes principales ─────────────
 app.use('/api/users', userRoutes);
 app.use('/api/roadtrips', tripRoutes);
 app.use('/api/favorites', favoriteRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api', oauthRoutes);
+app.use('/metrics', metricsRoutes);
 
-
-// Route de ping pour vérifier l'état du service
 app.get('/ping', (req, res) => {
-  res.status(200).json({ 
-    status: 'OK', 
-    timestamp: new Date().toISOString() 
-  });
+  res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// Middleware de gestion des erreurs (doit être le dernier middleware)
+// ───────────── Middleware gestion erreurs ─────────────
 app.use(errorHandler);
 
-// Configuration des options MongoDB avec des valeurs par défaut sécurisées
+// ───────────── Connexion MongoDB + lancement serveur ─────────────
 const mongoOptions = {
   useNewUrlParser: true,
   useUnifiedTopology: true,
   maxPoolSize: parseInt(process.env.DB_MAX_POOL_SIZE || '10', 10),
   serverSelectionTimeoutMS: 5000,
-  socketTimeoutMS: 45000
+  socketTimeoutMS: 45000,
 };
 
-// Connexion à MongoDB
 mongoose.connect(process.env.MONGO_URI, mongoOptions)
 .then(() => {
-  logger.info('Connexion à MongoDB réussie');
-  
-  // Démarrer le serveur
+  logger.info('✅ Connexion à MongoDB réussie');
+
   const server = app.listen(PORT, () => {
-    logger.info(`Database service démarré sur le port ${PORT}`);
-    logger.info(`Environnement: ${process.env.NODE_ENV}`);
+    logger.info(`🚀 Database service démarré sur http://localhost:${PORT}`);
+    logger.info(`🌍 Environnement: ${process.env.NODE_ENV}`);
   });
 
-  // Gestion du timeout du serveur
-  server.setTimeout(60000); // 60 secondes
+  server.setTimeout(60000);
 })
 .catch((error) => {
-  logger.error('Erreur de connexion à MongoDB:', error);
+  logger.error('❌ Erreur de connexion à MongoDB:', error);
   process.exit(1);
 });
 
-// Gestion des erreurs non catchées
-process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+// ───────────── Gestion erreurs Node.js ─────────────
+process.on('unhandledRejection', (reason) => {
+  logger.error('💥 Unhandled Rejection:', reason);
   process.exit(1);
 });
 
-// Gestion des exceptions non catchées
 process.on('uncaughtException', (error) => {
-  logger.error('Uncaught Exception:', error);
+  logger.error('💥 Uncaught Exception:', error);
   process.exit(1);
 });
 
