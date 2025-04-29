@@ -13,6 +13,8 @@ const favoriteRoutes = require('./routes/favoriteRoutes');
 const aiRoutes = require('./routes/aiRoutes');
 const oauthRoutes = require('./routes/oauthRoutes');
 const metricsRoutes = require('./routes/metricsRoutes');
+const messageRoutes = require('./routes/messageRoutes');
+const adminRoutes = require("./routes/adminRoutes")
 const { httpRequestsTotal, httpDurationHistogram } = require('./services/metricsServices');
 const errorHandler = require('./middlewares/errorHandler');
 
@@ -79,6 +81,9 @@ app.use('/api/users', userRoutes);
 app.use('/api/roadtrips', tripRoutes);
 app.use('/api/favorites', favoriteRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/messages', messageRoutes);
+app.use("/api/admin", adminRoutes)
+
 app.use('/api', oauthRoutes);
 app.use('/metrics', metricsRoutes);
 
