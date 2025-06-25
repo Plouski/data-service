@@ -7,50 +7,29 @@ const logger = require("../utils/logger");
 class TripController {
   static async getRoadtrips(req, res) {
     try {
-      const { search, country, duration, tags, budget, bestSeason, onlyPremium, page = 1, limit = 20, adminView = "false" } = req.query;
-
-      const filters = {
-        ...(adminView !== "true" && { isPublic: true }),
-        ...(onlyPremium === "true" && { isPremium: true }),
-        ...(bestSeason && { bestSeason }),
-        ...(country && { country }),
-        ...(duration && { duration: parseInt(duration) }),
-        ...(tags && { tags: { $in: tags.split(",") } }),
-        ...(budget && { "budget.amount": { $gte: parseInt(budget) } }),
-      };
-
-      if (search?.trim()) {
-        filters.$or = [
-          { title: { $regex: search, $options: "i" } },
-          { description: { $regex: search, $options: "i" } },
-          { tags: { $regex: search, $options: "i" } },
-        ];
-      }
-
-      const skip = (parseInt(page) - 1) * parseInt(limit);
-
-      const trips = await Trip.find(filters)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(parseInt(limit));
-
-      const total = await Trip.countDocuments(filters);
-
-      res.status(200).json({ trips, total });
-    } catch (error) {
-      logger.error("Erreur getRoadtrips", error);
-      res.status(500).json({ message: "Erreur récupération des roadtrips", error: error.message });
-    }
-  }
-
-  static async getPublicTrips(req, res) {
-    try {
       const trips = await Trip.find({ isPublished: true });
       res.status(200).json({ trips });
     } catch (error) {
       res.status(500).json({ message: "Erreur serveur", error });
     }
   }
+
+  static async getPopularTrips(req, res) {
+    try {
+      const trips = await Trip.find({ isPublished: true })
+        .sort({ views: -1 })
+        .limit(3);
+  
+      if (!trips || trips.length === 0) {
+        return res.status(200).json({ trips: [] });
+      }
+  
+      res.status(200).json({ trips });
+    } catch (error) {
+      console.error("Erreur lors de la récupération des roadtrips populaires :", error);
+      res.status(500).json({ message: "Erreur serveur", error });
+    }
+  }  
 
   static async getRoadtripById(req, res) {
     try {

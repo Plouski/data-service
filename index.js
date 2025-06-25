@@ -7,12 +7,13 @@ const rateLimit = require('express-rate-limit');
 
 const logger = require('./utils/logger');
 const { loadEnvironmentVariables, validateEnvironmentVariables } = require('./config/dotenv');
-const userRoutes = require('./routes/userRoutes');
 const tripRoutes = require('./routes/tripRoutes');
 const favoriteRoutes = require('./routes/favoriteRoutes');
 const aiRoutes = require('./routes/aiRoutes');
-const oauthRoutes = require('./routes/oauthRoutes');
+const authRoutes = require('./routes/authRoutes');
 const metricsRoutes = require('./routes/metricsRoutes');
+const messageRoutes = require('./routes/messageRoutes');
+const adminRoutes = require("./routes/adminRoutes")
 const { httpRequestsTotal, httpDurationHistogram } = require('./services/metricsServices');
 const errorHandler = require('./middlewares/errorHandler');
 
@@ -75,15 +76,26 @@ app.use((req, res, next) => {
 });
 
 // ───────────── Routes principales ─────────────
-app.use('/api/users', userRoutes);
 app.use('/api/roadtrips', tripRoutes);
 app.use('/api/favorites', favoriteRoutes);
 app.use('/api/ai', aiRoutes);
-app.use('/api', oauthRoutes);
+app.use('/api/messages', messageRoutes);
+app.use("/api/admin", adminRoutes)
+app.use("/api/auth", authRoutes)
+
 app.use('/metrics', metricsRoutes);
 
 app.get('/ping', (req, res) => {
   res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    service: 'data-service',
+    timestamp: new Date().toISOString(),
+    version: '1.0.0'
+  });
 });
 
 // ───────────── Middleware gestion erreurs ─────────────
