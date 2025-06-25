@@ -14,15 +14,15 @@ router.get("/roadtrips/recent", authMiddleware, isAdmin, adminController.getRece
 // Utilisateurs
 router.get("/users", authMiddleware, isAdmin, adminController.getUsers);
 router.put("/users/status/:id", authMiddleware, isAdmin, adminController.updateUserStatus);
-router.delete("/users/:id", authMiddleware, isAdmin, adminController.deleteUser);
 router.get("/users/:id", authMiddleware, isAdmin, adminController.getUserById);
 router.put("/users/:id", authMiddleware, isAdmin, adminController.updateUser);
+router.delete("/users/:id", authMiddleware, isAdmin, adminController.deleteUser);
 
 // Roadtrips
 router.get("/roadtrips", authMiddleware, isAdmin, adminController.getRoadtrips);
 router.post("/roadtrips", authMiddleware, isAdmin, adminController.createTrip);
-router.put("/roadtrips/:id", authMiddleware, isAdmin, TripController.updateTrip);
-router.delete("/roadtrips/:id", authMiddleware, isAdmin, TripController.deleteTrip);
-router.patch("/roadtrips/status/:id", authMiddleware, isAdmin, TripController.updateRoadtripStatus);
+router.put("/roadtrips/:id", authMiddleware, isAdmin, adminController.updateTrip);
+router.delete("/roadtrips/:id", authMiddleware, isAdmin, adminController.deleteTrip);
+router.patch("/roadtrips/status/:id", authMiddleware, isAdmin, adminController.updateRoadtripStatus);
 
 module.exports = router
