@@ -1,4 +1,4 @@
-const AiMessage = require('../models/AiMessage'); // modèle Mongoose (ou autre selon ta base)
+const AiMessage = require('../models/AiMessage');
 
 const createMessage = async (req, res) => {
   try {

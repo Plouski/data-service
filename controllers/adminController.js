@@ -2,7 +2,7 @@ const User = require("../models/User");
 const Trip = require("../models/Trip");
 const { validationResult } = require("express-validator");
 const sanitizeHtml = require("sanitize-html");
-const AiHistory = require("../models/AiHistory");
+const AiMessage = require("../models/AiMessage");
 const Favorite = require("../models/Favorite");
 const Subscription = require("../models/Subscription");
 const mongoose = require("mongoose");
@@ -39,11 +39,9 @@ const getRecentUsers = async (req, res) => {
     res.status(200).json({ users });
   } catch (error) {
     console.error("Erreur dans getRecentUsers:", error);
-    res
-      .status(500)
-      .json({
-        message: "Erreur lors de la récupération des derniers utilisateurs.",
-      });
+    res.status(500).json({
+      message: "Erreur lors de la récupération des derniers utilisateurs.",
+    });
   }
 };
 
@@ -57,11 +55,9 @@ const getRecentRoadtrips = async (req, res) => {
     res.status(200).json({ roadtrips });
   } catch (error) {
     console.error("Erreur dans getRecentRoadtrips:", error);
-    res
-      .status(500)
-      .json({
-        message: "Erreur lors de la récupération des derniers roadtrips.",
-      });
+    res.status(500).json({
+      message: "Erreur lors de la récupération des derniers roadtrips.",
+    });
   }
 };
 
@@ -112,52 +108,14 @@ const updateUserStatus = async (req, res) => {
     user.isVerified = isVerified;
     await user.save();
 
-    res
-      .status(200)
-      .json({
-        message: `Utilisateur ${isVerified ? "vérifié" : "non vérifié"}`,
-      });
+    res.status(200).json({
+      message: `Utilisateur ${isVerified ? "vérifié" : "non vérifié"}`,
+    });
   } catch (err) {
     console.error("Erreur updateUserStatus:", err);
     res
       .status(500)
       .json({ message: "Erreur lors de la mise à jour du statut" });
-  }
-};
-
-const deleteUser = async (req, res) => {
-  try {
-    const userId = req.params.id;
-
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ message: "ID utilisateur invalide" });
-    }
-
-    console.log("🧨 Suppression utilisateur + données associées:", userId);
-
-    // 1. Supprimer les données liées
-    await Promise.all([
-      AiHistory.deleteMany({ userId }),
-      Favorite.deleteMany({ userId }),
-      Subscription.deleteMany({ userId }),
-      Trip.deleteMany({ userId }),
-    ]);
-
-    // 2. Supprimer l'utilisateur lui-même
-    const deleted = await User.findByIdAndDelete(userId);
-    if (!deleted)
-      return res.status(404).json({ message: "Utilisateur non trouvé" });
-
-    res
-      .status(200)
-      .json({
-        message: "Utilisateur et données associées supprimés avec succès",
-      });
-  } catch (err) {
-    console.error("Erreur deleteUser:", err);
-    res
-      .status(500)
-      .json({ message: "Erreur lors de la suppression de l'utilisateur" });
   }
 };
 
@@ -206,6 +164,40 @@ const updateUser = async (req, res) => {
     res
       .status(500)
       .json({ message: "Erreur lors de la mise à jour de l'utilisateur" });
+  }
+};
+
+const deleteUser = async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: "ID utilisateur invalide" });
+    }
+
+    console.log("🧨 Suppression utilisateur + données associées:", userId);
+
+    // 1. Supprimer les données liées
+    await Promise.all([
+      AiMessage.deleteMany({ userId }),
+      Favorite.deleteMany({ userId }),
+      Subscription.deleteMany({ userId }),
+      Trip.deleteMany({ userId }),
+    ]);
+
+    // 2. Supprimer l'utilisateur lui-même
+    const deleted = await User.findByIdAndDelete(userId);
+    if (!deleted)
+      return res.status(404).json({ message: "Utilisateur non trouvé" });
+
+    res.status(200).json({
+      message: "Utilisateur et données associées supprimés avec succès",
+    });
+  } catch (err) {
+    console.error("Erreur deleteUser:", err);
+    res
+      .status(500)
+      .json({ message: "Erreur lors de la suppression de l'utilisateur" });
   }
 };
 
@@ -290,6 +282,116 @@ const createTrip = async (req, res) => {
   }
 };
 
+const updateTrip = async (req, res) => {
+  try {
+    if (!req.user || req.user.role !== "admin") {
+      return res.status(403).json({ message: "Accès refusé - Admin requis" });
+    }
+
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const updateData = {
+      userId: req.user.userId,
+      title: req.body.title && sanitizeHtml(req.body.title),
+      image: req.body.image,
+      country: req.body.country && sanitizeHtml(req.body.country),
+      description: req.body.description && sanitizeHtml(req.body.description),
+      duration: req.body.duration && parseInt(req.body.duration),
+      bestSeason: req.body.bestSeason && sanitizeHtml(req.body.bestSeason),
+      isPremium:
+        typeof req.body.isPremium !== "undefined"
+          ? Boolean(req.body.isPremium)
+          : undefined,
+      isPublished:
+        typeof req.body.isPublished !== "undefined"
+          ? Boolean(req.body.isPublished)
+          : undefined,
+      budget: req.body.budget
+        ? {
+            amount: parseFloat(req.body.budget?.amount || req.body.budget),
+            currency: sanitizeHtml(req.body.budget?.currency || "EUR"),
+          }
+        : undefined,
+      tags: req.body.tags && req.body.tags.map((tag) => sanitizeHtml(tag)),
+      pointsOfInterest: req.body.pointsOfInterest?.map((poi) => ({
+        name: sanitizeHtml(poi.name),
+        description: sanitizeHtml(poi.description),
+        image: poi.image || "/placeholder.svg",
+      })),
+      itinerary: req.body.itinerary?.map((step) => ({
+        day: parseInt(step.day),
+        title: sanitizeHtml(step.title),
+        description: sanitizeHtml(step.description),
+        overnight: Boolean(step.overnight),
+      })),
+    };
+
+    Object.keys(updateData).forEach(
+      (key) => updateData[key] === undefined && delete updateData[key]
+    );
+
+    const updated = await Trip.findByIdAndUpdate(
+      req.params.id,
+      { $set: updateData },
+      { new: true, runValidators: true }
+    );
+
+    res.status(200).json(updated);
+  } catch (error) {
+    logger.error("Erreur updateTrip", error);
+    res
+      .status(500)
+      .json({ message: "Erreur mise à jour", error: error.message });
+  }
+};
+
+const deleteTrip = async (req, res) => {
+  try {
+    if (!req.user || req.user.role !== "admin") {
+      return res.status(403).json({ message: "Accès refusé - Admin requis" });
+    }
+
+    await Trip.findByIdAndDelete(req.params.id);
+    res.status(200).json({ message: "Supprimé avec succès" });
+  } catch (error) {
+    logger.error("Erreur deleteTrip", error);
+    res
+      .status(500)
+      .json({ message: "Erreur suppression", error: error.message });
+  }
+};
+
+const updateRoadtripStatus = async (req, res) => {
+  const { id } = req.params;
+  const { isPublished } = req.body;
+
+  if (typeof isPublished !== "boolean") {
+    return res
+      .status(400)
+      .json({ message: "Le champ 'isPublished' doit être un booléen." });
+  }
+
+  try {
+    const roadtrip = await Trip.findById(id);
+    if (!roadtrip)
+      return res.status(404).json({ message: "Roadtrip non trouvé." });
+
+    roadtrip.isPublished = isPublished;
+    await roadtrip.save();
+
+    res.status(200).json({
+      message: `Roadtrip ${isPublished ? "publié" : "dépublié"} avec succès.`,
+      roadtrip,
+    });
+  } catch (error) {
+    console.error("Erreur lors de la mise à jour :", error);
+    res.status(500).json({ message: "Erreur serveur lors de la mise à jour." });
+  }
+};
+
 module.exports = {
   getStats,
   getRecentUsers,
@@ -300,5 +402,8 @@ module.exports = {
   getUserById,
   updateUser,
   getRoadtrips,
-  createTrip
+  createTrip,
+  updateTrip,
+  deleteTrip,
+  updateRoadtripStatus,
 };

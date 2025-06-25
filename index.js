@@ -9,7 +9,6 @@ const logger = require('./utils/logger');
 const { loadEnvironmentVariables, validateEnvironmentVariables } = require('./config/dotenv');
 const tripRoutes = require('./routes/tripRoutes');
 const favoriteRoutes = require('./routes/favoriteRoutes');
-const aiRoutes = require('./routes/aiRoutes');
 const authRoutes = require('./routes/authRoutes');
 const metricsRoutes = require('./routes/metricsRoutes');
 const messageRoutes = require('./routes/messageRoutes');
@@ -78,7 +77,6 @@ app.use((req, res, next) => {
 // ───────────── Routes principales ─────────────
 app.use('/api/roadtrips', tripRoutes);
 app.use('/api/favorites', favoriteRoutes);
-app.use('/api/ai', aiRoutes);
 app.use('/api/messages', messageRoutes);
 app.use("/api/admin", adminRoutes)
 app.use("/api/auth", authRoutes)
