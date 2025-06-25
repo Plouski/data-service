@@ -7,7 +7,7 @@ const FREE_MOBILE_API_KEY = process.env.FREE_MOBILE_API_KEY;
 const NotificationService = {
   sendConfirmationEmail: async (email, token) => {
     try {
-      const res = await axios.post(`${NOTIFICATION_SERVICE_URL}/notifications/email`, {
+      const res = await axios.post(`${NOTIFICATION_SERVICE_URL}/api/notifications/email`, {
         type: "confirm",
         email,
         tokenOrCode: token
@@ -26,7 +26,7 @@ const NotificationService = {
 
   sendWelcomeEmail: async (email, firstName) => {
     try {
-      const res = await axios.post(`${NOTIFICATION_SERVICE_URL}/notifications/email`, {
+      const res = await axios.post(`${NOTIFICATION_SERVICE_URL}/api/notifications/email`, {
         type: "welcome",
         email,
         tokenOrCode: firstName
@@ -41,7 +41,7 @@ const NotificationService = {
 
   sendPasswordResetEmail: async (email, code) => {
     try {
-      const res = await axios.post(`${NOTIFICATION_SERVICE_URL}/notifications/email`, {
+      const res = await axios.post(`${NOTIFICATION_SERVICE_URL}/api/notifications/email`, {
         type: "reset",
         email,
         tokenOrCode: code
@@ -63,9 +63,9 @@ const NotificationService = {
         throw new Error('Configuration Free Mobile manquante');
       }
       
-      console.log(`📤 Envoi requête vers ${NOTIFICATION_SERVICE_URL}/notifications/sms`);
+      console.log(`📤 Envoi requête vers ${NOTIFICATION_SERVICE_URL}/api/notifications/sms`);
       
-      const response = await axios.post(`${NOTIFICATION_SERVICE_URL}/notifications/sms`, {
+      const response = await axios.post(`${NOTIFICATION_SERVICE_URL}/api/notifications/sms`, {
         username: FREE_MOBILE_USERNAME,
         apiKey: FREE_MOBILE_API_KEY,
         code: code,

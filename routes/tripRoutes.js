@@ -14,7 +14,6 @@ router.post("/:id/favorite", authMiddleware, TripController.toggleFavorite)
 router.get("/user/favorites", authMiddleware, TripController.getFavoritesForUser)
 
 // ⚙️ Admin uniquement
-router.post("/", authMiddleware, isAdmin, TripController.createTrip);
 router.put("/:id", authMiddleware, isAdmin, TripController.updateTrip);
 router.delete("/:id", authMiddleware, isAdmin, TripController.deleteTrip);
 router.patch("/status/:id", authMiddleware, isAdmin, TripController.updateRoadtripStatus);
