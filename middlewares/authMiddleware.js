@@ -1,25 +1,18 @@
-// middlewares/authMiddleware.js - Amélioré
 const jwt = require('jsonwebtoken');
 const logger = require('../utils/logger');
 
-/**
- * Middleware pour vérifier l'authentification utilisateur
- * Vérifie que la requête contient un token JWT valide
- */
+/* Middleware pour vérifier l'authentification utilisateur */
 const authMiddleware = (req, res, next) => {
-  // Vérifier d'abord si c'est une requête de service
   if (req.isServiceRequest) {
     return next();
   }
 
-  // Récupérer le token depuis différentes sources possibles
   const authHeader = req.headers.authorization;
   const tokenFromCookie = req.cookies?.token;
   const tokenFromQuery = req.query.token;
 
   let token = null;
 
-  // Priorité à l'en-tête Authorization
   if (authHeader && authHeader.startsWith('Bearer ')) {
     token = authHeader.split(' ')[1];
   } else if (tokenFromCookie) {
@@ -36,20 +29,16 @@ const authMiddleware = (req, res, next) => {
   }
 
   try {
-    // Vérifier et décoder le token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Stocker les informations utilisateur dans la requête
     req.user = {
       userId: decoded.userId,
-      // id: decoded.userId,
       email: decoded.email,
       role: decoded.role || 'user'
     };
 
     logger.debug('Utilisateur authentifié', {
       userId: decoded.userId,
-      // id: decoded.userId,
       path: req.path,
       method: req.method
     });
@@ -62,7 +51,6 @@ const authMiddleware = (req, res, next) => {
       method: req.method
     });
 
-    // Gestion des différents types d'erreurs JWT
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({ 
         success: false,
@@ -79,13 +67,9 @@ const authMiddleware = (req, res, next) => {
   }
 };
 
-/**
- * Middleware pour vérifier les rôles utilisateur
- * @param {Array} roles - Tableau des rôles autorisés
- */
+/* Middleware pour vérifier les rôles utilisateur */
 const roleMiddleware = (roles = []) => {
   return (req, res, next) => {
-    // Vérifier si l'utilisateur est authentifié
     if (!req.user) {
       return res.status(401).json({ 
         success: false,
@@ -93,12 +77,10 @@ const roleMiddleware = (roles = []) => {
       });
     }
 
-    // Si requête de service, bypass la vérification des rôles
     if (req.isServiceRequest) {
       return next();
     }
 
-    // Vérifier si le rôle de l'utilisateur est dans la liste des rôles autorisés
     if (roles.length > 0 && !roles.includes(req.user.role)) {
       logger.warn('Accès refusé - rôle insuffisant', {
         userId: req.user.userId,

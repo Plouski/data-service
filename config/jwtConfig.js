@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 
+/** Génère un token d'accès JWT (courte durée) */
 const generateAccessToken = (user) => {
   return jwt.sign(
     {
@@ -7,11 +8,12 @@ const generateAccessToken = (user) => {
       email: user.email,
       role: user.role,
     },
-    process.env.JWT_SECRET, // secret pour access token
+    process.env.JWT_SECRET,
     { expiresIn: '1h' }
   );
 };
 
+/* Génère un token de rafraîchissement JWT (longue durée) */
 const generateRefreshToken = (user) => {
   return jwt.sign(
     {
@@ -19,28 +21,24 @@ const generateRefreshToken = (user) => {
       email: user.email,
       role: user.role,
     },
-    process.env.JWT_REFRESH_SECRET, // secret pour refresh token
+    process.env.JWT_REFRESH_SECRET,
     { expiresIn: '7d' }
   );
 };
 
+/* Vérifie et décode un access token */
 const verifyAccessToken = (token) => {
   return jwt.verify(token, process.env.JWT_SECRET);
 };
 
+/* Vérifie et décode un refresh token */
 const verifyRefreshToken = (token) => {
   return jwt.verify(token, process.env.JWT_REFRESH_SECRET);
-};
-
-const refreshAccessToken = (refreshToken) => {
-  const payload = verifyRefreshToken(refreshToken);
-  return generateAccessToken(payload);
 };
 
 module.exports = {
   generateAccessToken,
   generateRefreshToken,
   verifyAccessToken,
-  verifyRefreshToken,
-  refreshAccessToken,
+  verifyRefreshToken
 };

@@ -43,4 +43,7 @@ router.put('/profile', authMiddleware, AuthController.updateProfile);
 // Supprime le compte de l’utilisateur connecté
 router.delete('/account', authMiddleware, AuthController.deleteUser);
 
+// Nouveau endpoint pour refresh après paiement
+router.post('/refresh-user-data', authMiddleware, AuthController.refreshUserData);
+
 module.exports = router;

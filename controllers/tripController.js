@@ -1,129 +1,187 @@
 const Trip = require("../models/Trip");
-const { validationResult } = require("express-validator");
-const sanitizeHtml = require("sanitize-html");
 const logger = require("../utils/logger");
 
 class TripController {
+
+  /* Récupère tous les roadtrips publics (publiés) */
   static async getPublicRoadtrips(req, res) {
     try {
-      const trips = await Trip.find({ isPublished: true });
-      res.status(200).json({ trips });
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 10;
+      const skip = (page - 1) * limit;
+
+      const filters = { isPublished: true };
+      if (req.query.country) {
+        filters.country = new RegExp(req.query.country, 'i');
+      }
+      if (req.query.isPremium !== undefined) {
+        filters.isPremium = req.query.isPremium === 'true';
+      }
+
+      const trips = await Trip.find(filters)
+        .select('title image country description duration budget bestSeason isPremium tags views')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit);
+
+      const total = await Trip.countDocuments(filters);
+
+      res.status(200).json({
+        success: true,
+        data: {
+          trips,
+          pagination: {
+            currentPage: page,
+            totalPages: Math.ceil(total / limit),
+            totalItems: total,
+            hasNext: page * limit < total,
+            hasPrev: page > 1
+          }
+        }
+      });
     } catch (error) {
-      res.status(500).json({ message: "Erreur serveur", error });
+      logger.error("Erreur récupération roadtrips publics:", error);
+      res.status(500).json({
+        success: false,
+        message: "Erreur serveur lors de la récupération des roadtrips",
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
     }
   }
 
+  /* Récupère les 3 roadtrips les plus populaires (par vues) */
   static async getPopularRoadtrips(req, res) {
     try {
-      const trips = await Trip.find({ isPublished: true })
-        .sort({ views: -1 })
-        .limit(3);
-  
-      if (!trips || trips.length === 0) {
-        return res.status(200).json({ trips: [] });
-      }
-  
-      res.status(200).json({ trips });
-    } catch (error) {
-      console.error("Erreur lors de la récupération des roadtrips populaires :", error);
-      res.status(500).json({ message: "Erreur serveur", error });
-    }
-  }  
+      const limit = parseInt(req.query.limit) || 3;
 
+      const trips = await Trip.find({ isPublished: true })
+        .select('title image country description duration budget views isPremium')
+        .sort({ views: -1 })
+        .limit(limit);
+
+      res.status(200).json({
+        success: true,
+        data: { trips }
+      });
+    } catch (error) {
+      logger.error("Erreur récupération roadtrips populaires:", error);
+      res.status(500).json({
+        success: false,
+        message: "Erreur serveur lors de la récupération des roadtrips populaires",
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+
+  /* Récupère un roadtrip par son ID avec gestion du contenu premium */
   static async getRoadtripById(req, res) {
     try {
-      const trip = await Trip.findById(req.params.id);
+      const { id } = req.params;
 
-      if (!trip) throw new Error("Roadtrip non trouvé");
+      if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+        return res.status(400).json({
+          success: false,
+          message: "ID de roadtrip invalide"
+        });
+      }
 
+      const trip = await Trip.findById(id);
+
+      if (!trip) {
+        return res.status(404).json({
+          success: false,
+          message: "Roadtrip non trouvé"
+        });
+      }
+
+      const canAccessPremium = TripController._checkPremiumAccess(req.user);
+      
       const tripData = trip.toObject();
 
       if (trip.isPremium && !canAccessPremium) {
         tripData.itinerary = tripData.itinerary?.map(step => ({
           day: step.day,
           title: step.title,
-          description: step.description,
+          description: step.description ? step.description.substring(0, 100) + "..." : "",
           overnight: step.overnight
         })) || [];
-        tripData.notice = "Certaines informations sont réservées aux utilisateurs premium.";
-        tripData.callToAction = "Abonnez-vous pour débloquer l'itinéraire complet, la carte interactive et les conseils d'expert.";
+        
+        tripData.pointsOfInterest = tripData.pointsOfInterest?.slice(0, 2).map(poi => ({
+          ...poi,
+          description: poi.description ? poi.description.substring(0, 80) + "..." : ""
+        })) || [];
+
+        tripData.premiumNotice = {
+          message: "Certaines informations sont réservées aux utilisateurs premium.",
+          callToAction: "Abonnez-vous pour débloquer l'itinéraire complet, la carte interactive et les conseils d'expert.",
+          missingFeatures: ["Itinéraire détaillé", "Carte interactive", "Conseils d'expert", "Tous les points d'intérêt"]
+        };
       }
 
-      return res.status(200).json({ success: true, data: tripData });
+      return res.status(200).json({
+        success: true,
+        data: tripData
+      });
     } catch (error) {
-      logger.error("Erreur lors de la récupération du roadtrip", error);
-      return res.status(404).json({
+      logger.error("Erreur récupération roadtrip par ID:", error);
+      return res.status(500).json({
         success: false,
-        message: error.message || "Roadtrip non trouvé",
+        message: "Erreur serveur lors de la récupération du roadtrip",
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
   }
 
-  static async createTrip(req, res) {
-    try {
-      if (!req.user || req.user.role !== "admin") {
-        return res.status(403).json({ message: "Accès refusé - Admin requis" });
-      }
-
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-      }
-
-      const data = {
-        userId: req.user.userId,
-        title: sanitizeHtml(req.body.title),
-        image: req.body.image || "/placeholder.svg",
-        country: sanitizeHtml(req.body.country || ""),
-        description: sanitizeHtml(req.body.description || ""),
-        duration: parseInt(req.body.duration) || 7,
-        budget: {
-          amount: parseFloat(req.body.budget?.amount || req.body.budget || 1000),
-          currency: sanitizeHtml(req.body.budget?.currency || "EUR"),
-        },
-        bestSeason: sanitizeHtml(req.body.bestSeason || ""),
-        isPremium: Boolean(req.body.isPremium),
-        isPublished: Boolean(req.body.isPublished),
-        tags: (req.body.tags || []).map((tag) => sanitizeHtml(tag)),
-        pointsOfInterest: (req.body.pointsOfInterest || []).map((poi) => ({
-          name: sanitizeHtml(poi.name),
-          description: sanitizeHtml(poi.description),
-          image: poi.image || "/placeholder.svg",
-        })),
-        itinerary: (req.body.itinerary || []).map((step) => ({
-          day: parseInt(step.day),
-          title: sanitizeHtml(step.title),
-          description: sanitizeHtml(step.description),
-          overnight: Boolean(step.overnight),
-        })),
-      };
-
-      const trip = new Trip(data);
-      await trip.save();
-
-      res.status(201).json(trip);
-    } catch (error) {
-      logger.error("Erreur création roadtrip", error);
-      res.status(500).json({ message: "Erreur création", error: error.message });
-    }
-  }
-
-  
-
+  /* Incrémente le compteur de vues d'un roadtrip */
   static async incrementViewCount(req, res) {
     try {
       const { id } = req.params;
+
+      if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+        return res.status(400).json({
+          success: false,
+          message: "ID de roadtrip invalide"
+        });
+      }
+
       const trip = await Trip.findByIdAndUpdate(
         id,
         { $inc: { views: 1 } },
         { new: true }
       );
-      if (!trip) return res.status(404).json({ message: "Roadtrip non trouvé" });
-      res.status(200).json({ success: true, views: trip.views });
+
+      if (!trip) {
+        return res.status(404).json({
+          success: false,
+          message: "Roadtrip non trouvé"
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        data: { views: trip.views }
+      });
     } catch (error) {
-      console.error("Erreur incrementViewCount:", error);
-      res.status(500).json({ message: "Erreur interne", error: error.message });
+      logger.error("Erreur incrémentation vues:", error);
+      res.status(500).json({
+        success: false,
+        message: "Erreur serveur lors de l'incrémentation des vues",
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
     }
+  }
+
+  /* Vérifie si l'utilisateur peut accéder au contenu premium */
+  static _checkPremiumAccess(user) {
+    if (!user) {
+      console.log('🔐 Utilisateur non authentifié - accès premium refusé');
+      return false;
+    }
+    
+    const hasAccess = user.role === 'premium' || user.role === 'admin';
+    console.log(`🔐 Utilisateur ${user.userId} (${user.role}): ${hasAccess ? 'ACCÈS PREMIUM' : 'ACCÈS STANDARD'}`);
+    
+    return hasAccess;
   }
 
 }

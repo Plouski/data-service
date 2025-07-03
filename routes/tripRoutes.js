@@ -2,11 +2,16 @@ const express = require("express");
 const router = express.Router();
 const TripController = require("../controllers/tripController");
 
-// 📌 Routes publiques
+// Récupérer tous les roadtrips publics (avec filtres éventuels)
 router.get("/", TripController.getPublicRoadtrips);
-router.get("/popular", TripController.getPopularRoadtrips)
+
+// Récupérer les roadtrips les plus populaires (ex : par nombre de vues)
+router.get("/popular", TripController.getPopularRoadtrips);
+
+// Récupérer un roadtrip spécifique par son ID (détails)
 router.get("/:id", TripController.getRoadtripById);
 
-router.post("/:id/view", TripController.incrementViewCount);
+// Incrémenter le compteur de vues pour un roadtrip
+router.post("/:id/views", TripController.incrementViewCount);
 
 module.exports = router;

@@ -3,4 +3,4 @@ module.exports = function isAdmin(req, res, next) {
         return res.status(403).json({ message: 'Accès réservé aux administrateurs' });
     }
     next();
-};  
+};
