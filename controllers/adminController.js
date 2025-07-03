@@ -8,6 +8,7 @@ const Subscription = require("../models/Subscription");
 const mongoose = require("mongoose");
 const logger = require("../utils/logger");
 
+/* Récupère les statistiques globales pour le dashboard admin */
 const getStats = async (req, res) => {
   try {
     const [totalUsers, activeUsers, totalRoadtrips, publishedRoadtrips] =
@@ -18,23 +19,28 @@ const getStats = async (req, res) => {
         Trip.countDocuments({ isPublished: true }),
       ]);
 
-    res
-      .status(200)
-      .json({ totalUsers, activeUsers, totalRoadtrips, publishedRoadtrips });
+    res.status(200).json({ 
+      totalUsers, 
+      activeUsers, 
+      totalRoadtrips, 
+      publishedRoadtrips 
+    });
   } catch (error) {
     console.error("Erreur dans getStats:", error);
-    res
-      .status(500)
-      .json({ message: "Erreur lors de la récupération des statistiques." });
+    res.status(500).json({ 
+      message: "Erreur lors de la récupération des statistiques." 
+    });
   }
 };
 
+/* Récupère les 5 derniers utilisateurs inscrits */
 const getRecentUsers = async (req, res) => {
   try {
     const users = await User.find()
       .sort({ createdAt: -1 })
       .limit(5)
-      .select("id firstName lastName email isVerified createdAt");
+      .select("id firstName lastName email isVerified createdAt")
+      .lean();
 
     res.status(200).json({ users });
   } catch (error) {
@@ -45,12 +51,14 @@ const getRecentUsers = async (req, res) => {
   }
 };
 
+/* Récupère les 5 derniers roadtrips créés */
 const getRecentRoadtrips = async (req, res) => {
   try {
     const roadtrips = await Trip.find()
       .sort({ createdAt: -1 })
       .limit(5)
-      .select("_id title country bestSeason isPublished createdAt");
+      .select("_id title country bestSeason isPublished createdAt")
+      .lean();
 
     res.status(200).json({ roadtrips });
   } catch (error) {
@@ -61,6 +69,9 @@ const getRecentRoadtrips = async (req, res) => {
   }
 };
 
+// GESTION DES UTILISATEURS
+
+/* Récupère la liste paginée des utilisateurs avec recherche */
 const getUsers = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -75,23 +86,25 @@ const getUsers = async (req, res) => {
       ],
     };
 
-    const users = await User.find(query)
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .select("-password") // ne pas renvoyer le mot de passe
-      .lean();
-
-    const total = await User.countDocuments(query);
+    const [users, total] = await Promise.all([
+      User.find(query)
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .select("-password")
+        .lean(),
+      User.countDocuments(query)
+    ]);
 
     res.status(200).json({ users, total });
   } catch (err) {
     console.error("Erreur getUsers:", err);
-    res
-      .status(500)
-      .json({ message: "Erreur lors de la récupération des utilisateurs" });
+    res.status(500).json({ 
+      message: "Erreur lors de la récupération des utilisateurs" 
+    });
   }
 };
 
+/* Met à jour le statut de vérification d'un utilisateur */
 const updateUserStatus = async (req, res) => {
   try {
     const userId = req.params.id;
@@ -102,8 +115,9 @@ const updateUserStatus = async (req, res) => {
     }
 
     const user = await User.findById(userId);
-    if (!user)
+    if (!user) {
       return res.status(404).json({ message: "Utilisateur non trouvé" });
+    }
 
     user.isVerified = isVerified;
     await user.save();
@@ -113,12 +127,13 @@ const updateUserStatus = async (req, res) => {
     });
   } catch (err) {
     console.error("Erreur updateUserStatus:", err);
-    res
-      .status(500)
-      .json({ message: "Erreur lors de la mise à jour du statut" });
+    res.status(500).json({ 
+      message: "Erreur lors de la mise à jour du statut" 
+    });
   }
 };
 
+/* Récupère un utilisateur par son ID */
 const getUserById = async (req, res) => {
   const { id } = req.params;
 
@@ -127,19 +142,23 @@ const getUserById = async (req, res) => {
   }
 
   try {
-    const user = await User.findById(id).select("-password");
-    if (!user)
+    const user = await User.findById(id)
+      .select("-password");
+    
+    if (!user) {
       return res.status(404).json({ message: "Utilisateur non trouvé" });
+    }
 
     res.status(200).json(user);
   } catch (err) {
     console.error("Erreur getUserById:", err);
-    res
-      .status(500)
-      .json({ message: "Erreur lors de la récupération de l'utilisateur" });
+    res.status(500).json({ 
+      message: "Erreur lors de la récupération de l'utilisateur" 
+    });
   }
 };
 
+/* Met à jour les informations d'un utilisateur */
 const updateUser = async (req, res) => {
   const { id } = req.params;
   const updateData = req.body;
@@ -155,18 +174,20 @@ const updateUser = async (req, res) => {
       context: "query",
     }).select("-password");
 
-    if (!user)
+    if (!user) {
       return res.status(404).json({ message: "Utilisateur non trouvé" });
+    }
 
     res.status(200).json(user);
   } catch (err) {
     console.error("Erreur updateUser:", err);
-    res
-      .status(500)
-      .json({ message: "Erreur lors de la mise à jour de l'utilisateur" });
+    res.status(500).json({ 
+      message: "Erreur lors de la mise à jour de l'utilisateur" 
+    });
   }
 };
 
+/* Supprime un utilisateur et toutes ses données associées (GDPR compliant) */
 const deleteUser = async (req, res) => {
   try {
     const userId = req.params.id;
@@ -175,9 +196,8 @@ const deleteUser = async (req, res) => {
       return res.status(400).json({ message: "ID utilisateur invalide" });
     }
 
-    console.log("🧨 Suppression utilisateur + données associées:", userId);
+    logger.info("🧨 Suppression utilisateur + données associées:", userId);
 
-    // 1. Supprimer les données liées
     await Promise.all([
       AiMessage.deleteMany({ userId }),
       Favorite.deleteMany({ userId }),
@@ -185,22 +205,25 @@ const deleteUser = async (req, res) => {
       Trip.deleteMany({ userId }),
     ]);
 
-    // 2. Supprimer l'utilisateur lui-même
     const deleted = await User.findByIdAndDelete(userId);
-    if (!deleted)
+    if (!deleted) {
       return res.status(404).json({ message: "Utilisateur non trouvé" });
+    }
 
     res.status(200).json({
       message: "Utilisateur et données associées supprimés avec succès",
     });
   } catch (err) {
     console.error("Erreur deleteUser:", err);
-    res
-      .status(500)
-      .json({ message: "Erreur lors de la suppression de l'utilisateur" });
+    res.status(500).json({ 
+      message: "Erreur lors de la suppression de l'utilisateur" 
+    });
   }
 };
 
+// GESTION DES ROADTRIPS
+
+/* Récupère la liste paginée des roadtrips avec recherche */
 const getRoadtrips = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -216,23 +239,25 @@ const getRoadtrips = async (req, res) => {
       ],
     };
 
-    const trips = await Trip.find(query)
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .sort({ createdAt: -1 })
-      .lean();
-
-    const total = await Trip.countDocuments(query);
+    const [trips, total] = await Promise.all([
+      Trip.find(query)
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .sort({ createdAt: -1 })
+        .lean(),
+      Trip.countDocuments(query)
+    ]);
 
     res.status(200).json({ trips, total });
   } catch (err) {
     console.error("Erreur getRoadtrips:", err);
-    res
-      .status(500)
-      .json({ message: "Erreur lors de la récupération des roadtrips" });
+    res.status(500).json({ 
+      message: "Erreur lors de la récupération des roadtrips" 
+    });
   }
 };
 
+/* Crée un nouveau roadtrip */
 const createTrip = async (req, res) => {
   try {
     if (!req.user || req.user.role !== "admin") {
@@ -258,6 +283,7 @@ const createTrip = async (req, res) => {
       bestSeason: sanitizeHtml(req.body.bestSeason || ""),
       isPremium: Boolean(req.body.isPremium),
       isPublished: Boolean(req.body.isPublished),
+      
       tags: (req.body.tags || []).map((tag) => sanitizeHtml(tag)),
       pointsOfInterest: (req.body.pointsOfInterest || []).map((poi) => ({
         name: sanitizeHtml(poi.name),
@@ -278,10 +304,14 @@ const createTrip = async (req, res) => {
     res.status(201).json(trip);
   } catch (error) {
     logger.error("Erreur création roadtrip", error);
-    res.status(500).json({ message: "Erreur création", error: error.message });
+    res.status(500).json({ 
+      message: "Erreur création", 
+      error: error.message 
+    });
   }
 };
 
+/* Met à jour un roadtrip existant */
 const updateTrip = async (req, res) => {
   try {
     if (!req.user || req.user.role !== "admin") {
@@ -301,20 +331,19 @@ const updateTrip = async (req, res) => {
       description: req.body.description && sanitizeHtml(req.body.description),
       duration: req.body.duration && parseInt(req.body.duration),
       bestSeason: req.body.bestSeason && sanitizeHtml(req.body.bestSeason),
-      isPremium:
-        typeof req.body.isPremium !== "undefined"
-          ? Boolean(req.body.isPremium)
-          : undefined,
-      isPublished:
-        typeof req.body.isPublished !== "undefined"
-          ? Boolean(req.body.isPublished)
-          : undefined,
-      budget: req.body.budget
-        ? {
-            amount: parseFloat(req.body.budget?.amount || req.body.budget),
-            currency: sanitizeHtml(req.body.budget?.currency || "EUR"),
-          }
+      
+      isPremium: typeof req.body.isPremium !== "undefined" 
+        ? Boolean(req.body.isPremium) 
         : undefined,
+      isPublished: typeof req.body.isPublished !== "undefined" 
+        ? Boolean(req.body.isPublished) 
+        : undefined,
+      
+      budget: req.body.budget ? {
+        amount: parseFloat(req.body.budget?.amount || req.body.budget),
+        currency: sanitizeHtml(req.body.budget?.currency || "EUR"),
+      } : undefined,
+      
       tags: req.body.tags && req.body.tags.map((tag) => sanitizeHtml(tag)),
       pointsOfInterest: req.body.pointsOfInterest?.map((poi) => ({
         name: sanitizeHtml(poi.name),
@@ -342,12 +371,14 @@ const updateTrip = async (req, res) => {
     res.status(200).json(updated);
   } catch (error) {
     logger.error("Erreur updateTrip", error);
-    res
-      .status(500)
-      .json({ message: "Erreur mise à jour", error: error.message });
+    res.status(500).json({ 
+      message: "Erreur mise à jour", 
+      error: error.message 
+    });
   }
 };
 
+/* Supprime un roadtrip */
 const deleteTrip = async (req, res) => {
   try {
     if (!req.user || req.user.role !== "admin") {
@@ -358,26 +389,29 @@ const deleteTrip = async (req, res) => {
     res.status(200).json({ message: "Supprimé avec succès" });
   } catch (error) {
     logger.error("Erreur deleteTrip", error);
-    res
-      .status(500)
-      .json({ message: "Erreur suppression", error: error.message });
+    res.status(500).json({ 
+      message: "Erreur suppression", 
+      error: error.message 
+    });
   }
 };
 
+/* Met à jour le statut de publication d'un roadtrip */
 const updateRoadtripStatus = async (req, res) => {
   const { id } = req.params;
   const { isPublished } = req.body;
 
   if (typeof isPublished !== "boolean") {
-    return res
-      .status(400)
-      .json({ message: "Le champ 'isPublished' doit être un booléen." });
+    return res.status(400).json({ 
+      message: "Le champ 'isPublished' doit être un booléen." 
+    });
   }
 
   try {
     const roadtrip = await Trip.findById(id);
-    if (!roadtrip)
+    if (!roadtrip) {
       return res.status(404).json({ message: "Roadtrip non trouvé." });
+    }
 
     roadtrip.isPublished = isPublished;
     await roadtrip.save();
@@ -388,7 +422,9 @@ const updateRoadtripStatus = async (req, res) => {
     });
   } catch (error) {
     console.error("Erreur lors de la mise à jour :", error);
-    res.status(500).json({ message: "Erreur serveur lors de la mise à jour." });
+    res.status(500).json({ 
+      message: "Erreur serveur lors de la mise à jour." 
+    });
   }
 };
 

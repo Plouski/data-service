@@ -4,6 +4,7 @@ const fs = require('fs');
 
 // Fonction pour charger les variables d'environnement
 const loadEnvironmentVariables = () => {
+
   // Déterminer l'environnement
   const nodeEnv = process.env.NODE_ENV || 'development';
   
@@ -17,7 +18,6 @@ const loadEnvironmentVariables = () => {
   if (fs.existsSync(envFilePath)) {
     dotenv.config({ path: envFilePath });
   } else {
-    // Charger le .env par défaut
     dotenv.config();
   }
 
@@ -41,20 +41,19 @@ const loadEnvironmentVariables = () => {
 
 // Validation et sanitization des variables d'environnement
 const validateEnvironmentVariables = () => {
-  // Port
+
   const port = parseInt(process.env.PORT, 10);
+
   if (isNaN(port) || port < 1024 || port > 65535) {
     console.error('Port invalide. Utilisation du port par défaut 5002');
     process.env.PORT = '5002';
   }
 
-  // Niveau de log
   const validLogLevels = ['error', 'warn', 'info', 'debug'];
   if (!validLogLevels.includes(process.env.LOG_LEVEL)) {
     process.env.LOG_LEVEL = 'info';
   }
 
-  // MongoDB URI
   try {
     new URL(process.env.MONGO_URI);
   } catch (error) {
@@ -62,15 +61,11 @@ const validateEnvironmentVariables = () => {
     process.exit(1);
   }
 
-  // Limites de sécurité
-  process.env.MAX_REQUEST_BODY_SIZE = 
-    process.env.MAX_REQUEST_BODY_SIZE || '1mb';
+  process.env.MAX_REQUEST_BODY_SIZE = process.env.MAX_REQUEST_BODY_SIZE || '1mb';
   
-  // Configuration de l'environnement
   process.env.NODE_ENV = process.env.NODE_ENV || 'development';
 };
 
-// Exporter la configuration
 module.exports = {
   loadEnvironmentVariables,
   validateEnvironmentVariables

@@ -5,37 +5,43 @@ const JwtConfig = require("../config/jwtConfig");
 const logger = require("../utils/logger");
 const crypto = require("crypto");
 const NotificationService = require("../services/notificationService");
-
-// Nettoyage des erreurs pour éviter d'exposer des données sensibles
-function sanitizeError(err) {
-  const sanitized = {
-    message: err.message,
-    stack: err.stack,
-  };
-  if (err.response?.data) sanitized.response = err.response.data;
-  if (err.response?.status) sanitized.status = err.response.status;
-  return sanitized;
-}
+const mongoose = require("mongoose");
 
 class AuthController {
-  // Inscription d'un nouvel utilisateur
+  /* Inscription d'un nouvel utilisateur */
   static async register(req, res, next) {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
+        logger.warn("❌ Erreurs de validation lors de l'inscription", {
+          service: "auth-service",
+          action: "validation_error",
+          errors: errors.array(),
+        });
         return res.status(400).json({ errors: errors.array() });
       }
 
       const { email, password, firstName, lastName } = req.body;
+      logger.info("🔍 Données d'inscription reçues", {
+        service: "auth-service",
+        action: "data_received",
+        email,
+        firstName,
+        lastName,
+      });
 
       const existingUser = await User.findOne({ email });
       if (existingUser) {
+        logger.warn("❌ Tentative d'inscription avec email existant", {
+          service: "auth-service",
+          action: "email_already_exists",
+          email,
+        });
         return res.status(409).json({ message: "Cet email est déjà utilisé" });
       }
 
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
-
       const verificationToken = crypto.randomBytes(32).toString("hex");
 
       const newUser = new User({
@@ -49,27 +55,69 @@ class AuthController {
       });
 
       await newUser.save();
+      logger.info("✅ Utilisateur sauvegardé avec succès", {
+        service: "auth-service",
+        action: "user_saved",
+        userId: newUser._id,
+        email: newUser.email,
+      });
 
       const accessToken = JwtConfig.generateAccessToken(newUser);
       const refreshToken = JwtConfig.generateRefreshToken(newUser);
 
-      Promise.race([
-        NotificationService.sendConfirmationEmail(
-          newUser.email,
-          newUser.verificationToken
-        ),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("⏳ Timeout Mailjet")), 6000)
-        ),
-      ]).catch((notificationError) => {
-        logger.warn(
-          `⚠️ Échec de l'envoi de l'email de confirmation`,
-          sanitizeError(notificationError)
-        );
+      setImmediate(async () => {
+        try {
+          const currentUser = await User.findById(newUser._id);
+          if (currentUser && currentUser.isVerified) {
+            logger.info(
+              "🚫 Utilisateur déjà vérifié - Annulation envoi email",
+              {
+                service: "auth-service",
+                action: "email_cancelled_user_verified",
+                email: newUser.email,
+                userId: newUser._id,
+              }
+            );
+            return;
+          }
+
+          await NotificationService.sendConfirmationEmail(
+            newUser.email,
+            newUser.verificationToken
+          );
+
+          logger.info(
+            "✅ Email de confirmation envoyé avec succès en arrière-plan",
+            {
+              service: "auth-service",
+              action: "background_email_success",
+              email: newUser.email,
+            }
+          );
+        } catch (error) {
+          logger.error(
+            "❌ Échec de l'envoi d'email de confirmation en arrière-plan",
+            {
+              service: "auth-service",
+              action: "background_email_error",
+              email: newUser.email,
+              error: error.message,
+              errorCode: error.code,
+            }
+          );
+        }
+      });
+
+      logger.info("✅ Inscription terminée avec succès - Réponse immédiate", {
+        service: "auth-service",
+        action: "registration_completed",
+        userId: newUser._id,
+        email: newUser.email,
       });
 
       res.status(201).json({
-        message: "Utilisateur créé avec succès. Vérifiez votre boîte mail.",
+        message:
+          "Utilisateur créé avec succès. Un email de confirmation sera envoyé sous peu.",
         user: {
           id: newUser._id,
           email: newUser.email,
@@ -82,12 +130,17 @@ class AuthController {
         },
       });
     } catch (error) {
-      logger.error("Erreur complète:", sanitizeError(error));
+      logger.error("Erreur critique lors de l'inscription", {
+        service: "auth-service",
+        action: "registration_error",
+        error: error.message,
+        stack: error.stack,
+      });
       next(error);
     }
   }
 
-  // Connexion d'un utilisateur existant
+  /* Connexion d'un utilisateur existant */
   static async login(req, res, next) {
     try {
       const errors = validationResult(req);
@@ -96,11 +149,12 @@ class AuthController {
       }
 
       const { email, password } = req.body;
+
       const user = await User.findOne({ email });
       if (!user || !(await bcrypt.compare(password, user.password))) {
-        return res
-          .status(401)
-          .json({ message: "Email ou mot de passe incorrect" });
+        return res.status(401).json({
+          message: "Email ou mot de passe incorrect",
+        });
       }
 
       if (!user.isVerified) {
@@ -128,12 +182,12 @@ class AuthController {
         },
       });
     } catch (error) {
-      logger.error("Erreur lors de la connexion", sanitizeError(error));
+      logger.error("Erreur lors de la connexion:", error.message);
       next(error);
     }
   }
 
-  // Déconnexion
+  /* Déconnexion utilisateur (nettoyage des cookies) */
   static async logout(req, res, next) {
     try {
       if (req.cookies?.refreshToken) {
@@ -141,12 +195,12 @@ class AuthController {
       }
       res.status(200).json({ message: "Déconnexion réussie" });
     } catch (error) {
-      logger.error("Erreur lors de la déconnexion", error);
+      logger.error("Erreur lors de la déconnexion:", error.message);
       next(error);
     }
   }
 
-  // Vérifie si un token d'accès est encore valide
+  /* Vérifie la validité d'un token d'accès */
   static async verifyToken(req, res, next) {
     try {
       const token =
@@ -166,34 +220,187 @@ class AuthController {
             role: decoded.role,
           },
         });
-      } catch (error) {
-        return res.status(401).json({ valid: false, message: error.message });
+      } catch (tokenError) {
+        return res.status(401).json({
+          valid: false,
+          message: "Token invalide ou expiré",
+        });
       }
     } catch (error) {
-      logger.error(
-        "Erreur lors de la vérification du token",
-        sanitizeError(error)
-      );
+      logger.error("Erreur lors de la vérification du token:", error.message);
       next(error);
     }
   }
 
-  // Permet de renouveler un accessToken à partir d’un refreshToken
+  /* Initie la réinitialisation de mot de passe par SMS */
+  static async initiatePasswordResetBySMS(req, res, next) {
+    try {
+      const { phoneNumber } = req.body;
+
+      if (!phoneNumber) {
+        return res.status(400).json({ message: "Numéro de téléphone requis" });
+      }
+
+      // Vérification de l'état de la connexion DB
+      if (mongoose.connection.readyState !== 1) {
+        logger.error("❌ Base de données non disponible", {
+          service: "auth-service",
+          action: "db_not_ready",
+          readyState: mongoose.connection.readyState,
+        });
+        return res.status(503).json({
+          message:
+            "Service temporairement indisponible. Veuillez réessayer dans quelques instants.",
+        });
+      }
+
+      logger.info("🔍 Recherche utilisateur par téléphone", {
+        service: "auth-service",
+        action: "user_lookup_start",
+        phoneNumber: phoneNumber.substring(0, 3) + "***",
+      });
+
+      let user;
+      try {
+        // Requête avec timeout explicite plus court
+        user = await User.findOne({ phoneNumber })
+          .maxTimeMS(8000) // Timeout de 8 secondes max
+          .lean(); // Optimisation : retourne un objet JS simple
+
+        logger.info("✅ Recherche utilisateur terminée", {
+          service: "auth-service",
+          action: "user_lookup_complete",
+          userFound: !!user,
+        });
+      } catch (dbError) {
+        logger.error("❌ Erreur base de données lors de la recherche", {
+          service: "auth-service",
+          action: "db_query_error",
+          error: dbError.message,
+          errorCode: dbError.code,
+          phoneNumber: phoneNumber.substring(0, 3) + "***",
+        });
+
+        // Réponse générique pour ne pas exposer les problèmes DB
+        return res.status(200).json({
+          message:
+            "Si ce numéro est associé à un compte, un code a été envoyé par SMS.",
+        });
+      }
+
+      // Traitement si utilisateur trouvé
+      if (user) {
+        try {
+          const resetCode = Math.floor(
+            100000 + Math.random() * 900000
+          ).toString();
+          const resetCodeExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 heure
+
+          // Mise à jour avec timeout
+          await User.findByIdAndUpdate(
+            user._id,
+            {
+              resetCode,
+              resetCodeExpires,
+            },
+            {
+              maxTimeMS: 5000, // Timeout de 5 secondes pour la sauvegarde
+              new: false, // Pas besoin du document mis à jour
+            }
+          );
+
+          logger.info("✅ Code de réinitialisation généré et sauvegardé", {
+            service: "auth-service",
+            action: "reset_code_saved",
+            userId: user._id,
+            phoneNumber: phoneNumber.substring(0, 3) + "***",
+          });
+
+          // Envoi SMS en arrière-plan pour ne pas bloquer la réponse
+          setImmediate(async () => {
+            try {
+              await NotificationService.sendPasswordResetSMS(
+                phoneNumber,
+                resetCode
+              );
+              logger.info("✅ SMS de réinitialisation envoyé avec succès", {
+                service: "auth-service",
+                action: "sms_sent_success",
+                phoneNumber: phoneNumber.substring(0, 3) + "***",
+              });
+            } catch (smsError) {
+              logger.error("❌ Échec envoi SMS de réinitialisation", {
+                service: "auth-service",
+                action: "sms_send_failed",
+                error: smsError.message,
+                phoneNumber: phoneNumber.substring(0, 3) + "***",
+              });
+            }
+          });
+        } catch (saveError) {
+          logger.error(
+            "❌ Erreur lors de la sauvegarde du code de réinitialisation",
+            {
+              service: "auth-service",
+              action: "save_reset_code_error",
+              error: saveError.message,
+              userId: user._id,
+            }
+          );
+
+          // Même en cas d'erreur de sauvegarde, on renvoie une réponse générique
+          return res.status(200).json({
+            message:
+              "Si ce numéro est associé à un compte, un code a été envoyé par SMS.",
+          });
+        }
+      } else {
+        logger.info("🔍 Aucun utilisateur trouvé pour ce numéro", {
+          service: "auth-service",
+          action: "user_not_found",
+          phoneNumber: phoneNumber.substring(0, 3) + "***",
+        });
+      }
+
+      // Réponse identique dans tous les cas pour la sécurité
+      return res.status(200).json({
+        message:
+          "Si ce numéro est associé à un compte, un code a été envoyé par SMS.",
+      });
+    } catch (error) {
+      logger.error("❌ Erreur critique lors de la réinitialisation par SMS", {
+        service: "auth-service",
+        action: "critical_sms_reset_error",
+        error: error.message,
+        stack: error.stack,
+      });
+
+      // En cas d'erreur critique, on renvoie une erreur 500
+      return res.status(500).json({
+        message:
+          "Une erreur interne s'est produite. Veuillez réessayer plus tard.",
+      });
+    }
+  }
+
+  /* Renouvelle un access token à partir d'un refresh token */
   static async refreshToken(req, res, next) {
     try {
       const { refreshToken } = req.body;
 
       if (!refreshToken) {
-        return res
-          .status(400)
-          .json({ message: "Token de rafraîchissement requis" });
+        return res.status(400).json({
+          message: "Token de rafraîchissement requis",
+        });
       }
 
       try {
         const payload = JwtConfig.verifyRefreshToken(refreshToken);
+
         const user = await User.findById(payload.userId);
-        if (!user)
+        if (!user) {
           return res.status(401).json({ message: "Utilisateur non trouvé" });
+        }
 
         const newAccessToken = JwtConfig.generateAccessToken(user);
         const newRefreshToken = JwtConfig.generateRefreshToken(user);
@@ -202,28 +409,29 @@ class AuthController {
           accessToken: newAccessToken,
           refreshToken: newRefreshToken,
         });
-      } catch (error) {
-        return res
-          .status(401)
-          .json({ message: "RefreshToken invalide ou expiré" });
+      } catch (tokenError) {
+        return res.status(401).json({
+          message: "RefreshToken invalide ou expiré",
+        });
       }
     } catch (error) {
-      logger.error(
-        "Erreur lors du rafraîchissement du token",
-        sanitizeError(error)
-      );
+      logger.error("Erreur lors du rafraîchissement du token:", error.message);
       next(error);
     }
   }
 
-  // Vérifie un compte utilisateur à l'aide du token de vérification
+  /* Vérifie un compte utilisateur avec le token de vérification */
   static async verifyAccount(req, res, next) {
     try {
       const { token } = req.body;
-      if (!token) return res.status(400).json({ message: "Token requis" });
+      if (!token) {
+        return res.status(400).json({ message: "Token requis" });
+      }
 
       const user = await User.findOne({ verificationToken: token });
-      if (!user) return res.status(400).json({ message: "Token invalide" });
+      if (!user) {
+        return res.status(400).json({ message: "Token invalide" });
+      }
 
       const creationDate = user.createdAt || new Date();
       const expirationDate = new Date(
@@ -234,20 +442,35 @@ class AuthController {
         return res.status(400).json({ message: "Token expiré" });
       }
 
+      if (user.isVerified) {
+        logger.warn("⚠️ Tentative de vérification d'un compte déjà vérifié", {
+          service: "auth-service",
+          action: "already_verified_attempt",
+          userId: user._id,
+          email: user.email,
+        });
+        return res.status(200).json({
+          message: "Compte déjà vérifié",
+          user: {
+            id: user._id,
+            email: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName,
+          },
+        });
+      }
+
+      NotificationService.cancelPendingEmails(user.email);
+
       user.isVerified = true;
       user.verificationToken = undefined;
       await user.save();
 
-      Promise.race([
-        NotificationService.sendWelcomeEmail(user.email, user.firstName || ""),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("⏳ Timeout Mailjet")), 6000)
-        ),
-      ]).catch((notificationError) => {
-        logger.warn(
-          "⚠️ Échec de l'envoi de l'email de bienvenue",
-          sanitizeError(notificationError)
-        );
+      logger.info("✅ Compte vérifié avec succès", {
+        service: "auth-service",
+        action: "account_verified",
+        userId: user._id,
+        email: user.email,
       });
 
       return res.status(200).json({
@@ -260,12 +483,17 @@ class AuthController {
         },
       });
     } catch (error) {
-      logger.error("Erreur lors de la vérification du compte", error);
+      logger.error("Erreur lors de la vérification du compte", {
+        service: "auth-service",
+        action: "account_verification_error",
+        error: error.message,
+        stack: error.stack,
+      });
       next(error);
     }
   }
 
-  // Initier la réinitialisation de mot de passe par email
+  /* Initie la réinitialisation de mot de passe par email */
   static async initiatePasswordReset(req, res, next) {
     try {
       const { email } = req.body;
@@ -274,30 +502,83 @@ class AuthController {
         return res.status(400).json({ message: "Email requis" });
       }
 
+      logger.info("🔑 Demande de réinitialisation de mot de passe", {
+        service: "auth-service",
+        action: "password_reset_request",
+        email,
+      });
+
       const user = await User.findOne({ email });
 
       if (user) {
-        // Génération d'un code de réinitialisation à 6 chiffres valable 1h
+        const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
+
+        if (
+          user.resetCode &&
+          user.resetCodeExpires &&
+          user.resetCodeExpires > twoMinutesAgo
+        ) {
+          logger.warn(
+            "🚫 Code de réinitialisation déjà généré récemment (moins de 2min)",
+            {
+              service: "auth-service",
+              action: "reset_code_too_recent",
+              email,
+              expiresAt: user.resetCodeExpires,
+              minutesLeft: Math.round(
+                (user.resetCodeExpires - Date.now()) / 60000
+              ),
+            }
+          );
+
+          return res.status(200).json({
+            message:
+              "Si cet email est associé à un compte, des instructions ont été envoyées.",
+          });
+        }
+
         const resetCode = Math.floor(
           100000 + Math.random() * 900000
         ).toString();
-        const resetCodeExpires = new Date(Date.now() + 60 * 60 * 1000);
+        const resetCodeExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 heure
 
         user.resetCode = resetCode;
         user.resetCodeExpires = resetCodeExpires;
         await user.save();
 
-        // Envoi de l'email de réinitialisation (non bloquant)
-        Promise.race([
-          NotificationService.sendPasswordResetEmail(email, resetCode),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("⏳ Timeout Mailjet")), 6000)
-          ),
-        ]).catch((notificationError) => {
-          logger.warn(
-            `⚠️ Échec de l'envoi de l'email de réinitialisation`,
-            sanitizeError(notificationError)
-          );
+        logger.info("✅ Code de réinitialisation généré", {
+          service: "auth-service",
+          action: "reset_code_generated",
+          email,
+          expiresAt: resetCodeExpires,
+        });
+
+        setImmediate(async () => {
+          try {
+            await NotificationService.sendPasswordResetEmail(email, resetCode);
+
+            logger.info("✅ Email de réinitialisation envoyé en arrière-plan", {
+              service: "auth-service",
+              action: "reset_email_sent",
+              email,
+            });
+          } catch (error) {
+            logger.error(
+              "❌ Échec envoi email réinitialisation en arrière-plan",
+              {
+                service: "auth-service",
+                action: "reset_email_failed",
+                email,
+                error: error.message,
+              }
+            );
+          }
+        });
+      } else {
+        logger.warn("🔍 Tentative de réinitialisation pour email inexistant", {
+          service: "auth-service",
+          action: "reset_email_not_found",
+          email,
         });
       }
 
@@ -306,59 +587,17 @@ class AuthController {
           "Si cet email est associé à un compte, des instructions ont été envoyées.",
       });
     } catch (error) {
-      logger.error(
-        "Erreur lors de la demande de réinitialisation",
-        sanitizeError(error)
-      );
-      next(error);
-    }
-  }
-
-  // Initier la réinitialisation par SMS
-  static async initiatePasswordResetBySMS(req, res, next) {
-    try {
-      const { phoneNumber } = req.body;
-
-      if (!phoneNumber) {
-        return res.status(400).json({ message: "Numéro de téléphone requis" });
-      }
-
-      const user = await User.findOne({ phoneNumber });
-
-      if (user) {
-        const resetCode = Math.floor(
-          100000 + Math.random() * 900000
-        ).toString();
-        const resetCodeExpires = new Date(Date.now() + 60 * 60 * 1000);
-
-        user.resetCode = resetCode;
-        user.resetCodeExpires = resetCodeExpires;
-        await user.save();
-
-        try {
-          await NotificationService.sendPasswordResetSMS(
-            phoneNumber,
-            resetCode
-          );
-        } catch (notificationError) {
-          logger.warn(
-            `⚠️ Échec de l'envoi du SMS`,
-            sanitizeError(notificationError)
-          );
-        }
-      }
-
-      return res.status(200).json({
-        message:
-          "Si ce numéro est associé à un compte, un code a été envoyé par SMS.",
+      logger.error("Erreur lors de la demande de réinitialisation", {
+        service: "auth-service",
+        action: "password_reset_error",
+        error: error.message,
+        stack: error.stack,
       });
-    } catch (error) {
-      logger.error("Erreur réinitialisation SMS", sanitizeError(error));
       next(error);
     }
   }
 
-  // Réinitialiser le mot de passe avec un code (email requis)
+  /* Réinitialise le mot de passe avec un code de vérification */
   static async resetPassword(req, res, next) {
     try {
       const { email, resetCode, newPassword } = req.body;
@@ -392,12 +631,12 @@ class AuthController {
         message: "Mot de passe réinitialisé avec succès",
       });
     } catch (error) {
-      logger.error("Erreur lors de la réinitialisation", sanitizeError(error));
+      logger.error("Erreur lors de la réinitialisation:", error.message);
       next(error);
     }
   }
 
-  // Changer le mot de passe
+  /* Changer le mot de passe (utilisateur connecté) */
   static async changePassword(req, res, next) {
     try {
       const userId = req.user.userId;
@@ -412,9 +651,7 @@ class AuthController {
 
       const user = await User.findById(userId);
       if (!user) {
-        return res.status(404).json({
-          message: "Utilisateur non trouvé",
-        });
+        return res.status(404).json({ message: "Utilisateur non trouvé" });
       }
 
       const isPasswordValid = await bcrypt.compare(
@@ -448,12 +685,12 @@ class AuthController {
         message: "Mot de passe changé avec succès",
       });
     } catch (error) {
-      logger.error("Erreur lors du changement de mot de passe", error);
+      logger.error("Erreur lors du changement de mot de passe:", error.message);
       next(error);
     }
   }
 
-  // Récupérer le profil
+  /* Récupère le profil utilisateur */
   static async getProfile(req, res, next) {
     try {
       const userId = req.user.userId;
@@ -461,16 +698,12 @@ class AuthController {
       const user = await User.findById(userId).select(
         "-password -resetCode -resetCodeExpires -verificationToken"
       );
+
       if (!user) {
         return res.status(404).json({
           message: "Profil utilisateur non trouvé",
         });
       }
-
-      // const subscription = await Subscription.findOne({
-      //   userId,
-      //   status: "active",
-      // }).select("plan status startDate endDate");
 
       res.status(200).json({
         user: {
@@ -484,16 +717,15 @@ class AuthController {
           createdAt: user.createdAt,
           updatedAt: user.updatedAt,
           authProvider: user.oauth?.provider || "local",
-          // subscription: subscription || null,
         },
       });
     } catch (error) {
-      logger.error("Erreur lors de la récupération du profil", error);
+      logger.error("Erreur lors de la récupération du profil:", error.message);
       next(error);
     }
   }
 
-  // Modifier le profil
+  /* Met à jour le profil utilisateur */
   static async updateProfile(req, res, next) {
     try {
       const userId = req.user.userId;
@@ -506,9 +738,9 @@ class AuthController {
 
       const user = await User.findById(userId);
       if (!user) {
-        return res
-          .status(404)
-          .json({ message: "Profil utilisateur non trouvé" });
+        return res.status(404).json({
+          message: "Profil utilisateur non trouvé",
+        });
       }
 
       const allowedUpdates = { firstName, lastName, phoneNumber };
@@ -518,6 +750,7 @@ class AuthController {
         }
       }
 
+      user.updatedAt = new Date();
       await user.save();
 
       res.status(200).json({
@@ -531,15 +764,16 @@ class AuthController {
           role: user.role,
           isVerified: user.isVerified,
           createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
         },
       });
     } catch (error) {
-      logger.error("Erreur lors de la mise à jour du profil", error);
+      logger.error("Erreur lors de la mise à jour du profil:", error.message);
       next(error);
     }
   }
 
-  // Supprimer le compte
+  /* Supprime le compte utilisateur */
   static async deleteUser(req, res, next) {
     try {
       const userId = req.user.userId;
@@ -557,8 +791,53 @@ class AuthController {
         message: "Compte supprimé avec succès",
       });
     } catch (error) {
-      logger.error("Erreur lors de la suppression du compte", error);
+      logger.error("Erreur lors de la suppression du compte:", error.message);
       next(error);
+    }
+  }
+
+  /* Met à jour les données utilisateur et génère de nouveaux tokens */
+  static async refreshUserData(req, res, next) {
+    try {
+      const userId = req.user.userId;
+
+      const freshUser = await User.findById(userId).select(
+        "-password -resetCode -resetCodeExpires -verificationToken"
+      );
+
+      if (!freshUser) {
+        return res.status(404).json({
+          error: "Utilisateur non trouvé",
+        });
+      }
+
+      const newAccessToken = JwtConfig.generateAccessToken(freshUser);
+      const newRefreshToken = JwtConfig.generateRefreshToken(freshUser);
+
+      logger.info(
+        `Token refreshé pour utilisateur ${userId}, nouveau rôle: ${freshUser.role}`
+      );
+
+      res.status(200).json({
+        message: "Données utilisateur mises à jour",
+        tokens: {
+          accessToken: newAccessToken,
+          refreshToken: newRefreshToken,
+        },
+        user: {
+          id: freshUser._id,
+          email: freshUser.email,
+          firstName: freshUser.firstName,
+          lastName: freshUser.lastName,
+          role: freshUser.role,
+        },
+      });
+    } catch (error) {
+      logger.error("Erreur refreshUserData:", error.message);
+      res.status(500).json({
+        error: "Erreur lors du refresh des données",
+        details: error.message,
+      });
     }
   }
 }

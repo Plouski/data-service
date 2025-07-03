@@ -1,4 +1,3 @@
-// Même base
 const client = require('prom-client');
 const collectDefaultMetrics = client.collectDefaultMetrics;
 const Registry = client.Registry;
@@ -21,7 +20,6 @@ const httpDurationHistogram = new client.Histogram({
   registers: [register],
 });
 
-// ➡️ CUSTOM : Roadtrips créés
 const roadtripsCreatedTotal = new client.Counter({
   name: 'roadtrips_created_total',
   help: 'Nombre total de roadtrips créés',
