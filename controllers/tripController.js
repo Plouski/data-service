@@ -174,7 +174,7 @@ class TripController {
   /* Vérifie si l'utilisateur peut accéder au contenu premium */
   static _checkPremiumAccess(user) {
     if (!user) {
-      console.log('🔐 Utilisateur non authentifié - accès premium refusé');
+      console.log('🔐 Accès premium refusé sauf pour les admins');
       return false;
     }
     
