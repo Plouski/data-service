@@ -1,69 +1,65 @@
 const promClient = require('prom-client');
 
-// Registre séparé pour les métriques standardisées
+// Registre
 const register = new promClient.Registry();
 
 // Métriques par défaut (CPU, mémoire, etc.) - VITALS obligatoires
 promClient.collectDefaultMetrics({
   register,
-  prefix: 'data_service_standard_'
+  prefix: `${process.env.SERVICE_NAME || 'service'}_`
 });
 
-// ═══════════════════════════════════════════════════════════════
-// MÉTRIQUES STANDARD POUR TOUS LES MICROSERVICES (MVP)
-// ═══════════════════════════════════════════════════════════════
+// MÉTRIQUES STANDARD POUR TOUS LES MICROSERVICES
 
-// 1. Santé du service (OBLIGATOIRE pour Prometheus)
+// 1. Santé du service
 const serviceHealthStatus = new promClient.Gauge({
-  name: 'service_health_status_standard',
+  name: 'service_health_status',
   help: 'Service health status (1 = healthy, 0 = unhealthy)',
   labelNames: ['service_name'],
   registers: [register]
 });
 
-// 2. Temps de réponse HTTP (PERFORMANCE)
+// 2. Temps de réponse HTTP
 const httpRequestDuration = new promClient.Histogram({
-  name: 'http_request_duration_seconds_standard',
-  help: 'HTTP request duration in seconds (standardized)',
+  name: 'http_request_duration_seconds',
+  help: 'HTTP request duration in seconds',
   labelNames: ['method', 'route', 'status_code'],
   buckets: [0.1, 0.5, 1, 2, 5],
   registers: [register]
 });
 
-// 3. Nombre total de requêtes (CHARGE)
+// 3. Nombre total de requêtes
 const httpRequestsTotal = new promClient.Counter({
-  name: 'http_requests_total_standard',
-  help: 'Total number of HTTP requests (standardized)',
+  name: 'http_requests_total',
+  help: 'Total number of HTTP requests',
   labelNames: ['method', 'route', 'status_code'],
   registers: [register]
 });
 
-// 4. Connexions actives (CHARGE)
+// 4. Connexions actives
 const activeConnections = new promClient.Gauge({
-  name: 'active_connections_standard',
-  help: 'Number of active connections (standardized)',
+  name: 'active_connections',
+  help: 'Number of active connections',
   registers: [register]
 });
 
-// 5. Status base de données (DÉPENDANCES)
+// 5. Status base de données
 const databaseStatus = new promClient.Gauge({
-  name: 'database_status_standard',
+  name: 'database_status',
   help: 'Database connection status (1 = connected, 0 = disconnected)',
   labelNames: ['database_type'],
   registers: [register]
 });
 
-// 6. Services externes (DÉPENDANCES)
+// 6. Services externes
 const externalServiceHealth = new promClient.Gauge({
-  name: 'external_service_health_standard',
+  name: 'external_service_health',
   help: 'External service health (1 = healthy, 0 = unhealthy)',
   labelNames: ['service_name'],
   registers: [register]
 });
 
-// ═══════════════════════════════════════════════════════════════
-// HELPERS SIMPLES POUR LE MVP
-// ═══════════════════════════════════════════════════════════════
+// HELPERS SIMPLES
 
 // Helper pour mettre à jour la santé du service
 function updateServiceHealth(serviceName, isHealthy) {
@@ -93,7 +89,6 @@ module.exports = {
   activeConnections,
   databaseStatus,
   externalServiceHealth,
-  // Helpers
   updateServiceHealth,
   updateDatabaseHealth,
   updateExternalServiceHealth,
