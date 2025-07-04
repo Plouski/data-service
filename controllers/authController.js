@@ -860,9 +860,11 @@ class AuthController {
         });
       }
 
-      if (phoneNumber && phoneNumber !== user.phoneNumber) {
+      const normalizedPhoneNumber = phoneNumber === "" ? null : phoneNumber;
+
+      if (normalizedPhoneNumber && normalizedPhoneNumber !== user.phoneNumber) {
         const existingUserWithPhone = await User.findOne({
-          phoneNumber,
+          phoneNumber: normalizedPhoneNumber,
           _id: { $ne: userId },
         });
 
@@ -879,7 +881,12 @@ class AuthController {
         }
       }
 
-      const allowedUpdates = { firstName, lastName, phoneNumber };
+      const allowedUpdates = {
+        firstName,
+        lastName,
+        phoneNumber: normalizedPhoneNumber,
+      };
+
       for (const key in allowedUpdates) {
         if (allowedUpdates[key] !== undefined) {
           user[key] = allowedUpdates[key];
